@@ -18,26 +18,28 @@ pub enum Key {
     Other,
 }
 
-#[repr(C)]
-struct Event {
-    tv_sec: isize,
-    tv_usec: isize,
-    pub kind: u16,
-    pub code: u16,
-    pub value: i32,
-}
-
 pub struct KeyboardInputStream {
     fd: File,
     buf: [u8; 24],
 }
 
 impl KeyboardInputStream {
+    /// # Errors
+    /// Will throw an error if the file can't be open
     pub fn new<T: AsRef<Path>>(file: T) -> io::Result<Self> {
         let fd = File::open(file)?;
         let buf = [0; 24];
         Ok(Self { fd, buf })
     }
+}
+
+#[repr(C)]
+struct Event {
+    tv_sec: isize,
+    tv_usec: isize,
+    kind: u16,
+    code: u16,
+    value: i32,
 }
 
 impl Iterator for KeyboardInputStream {

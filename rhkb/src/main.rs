@@ -22,10 +22,7 @@ use rhkb_lib::{
 const BASE_DIR: [&str; 3] = [env!("HOME"), ".config", "rhkb"];
 
 fn bind(ctrl: &mut Builder) {
-    ctrl.bind(
-        &[keyboard::CTRL, keyboard::ALT, french::F],
-        cmd("echo hello world"),
-    );
+    ctrl.bind(&[keyboard::MOD, french::D], cmd("alacritty"));
 }
 
 fn main() -> io::Result<()> {
@@ -54,7 +51,7 @@ fn directory_setup() -> io::Result<BufWriter<File>> {
     let mut path: PathBuf = BASE_DIR.iter().collect();
     path.push("rhkd.log");
 
-    let _ = DirBuilder::new()
+    DirBuilder::new()
         .recursive(true)
         .create(path.parent().unwrap())?;
 

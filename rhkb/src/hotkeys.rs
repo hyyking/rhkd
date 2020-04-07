@@ -170,11 +170,10 @@ impl Controler {
         }
     }
     pub fn register_release(&mut self, key: u16) {
-        match is_control_character(key) {
-            Ok(ctrl) => self.current.remove_mod(ctrl),
-            Err(_) => {
-                let _ = self.current.pop();
-            }
+        if let Ok(ctrl) = is_control_character(key) {
+            self.current.remove_mod(ctrl);
+        } else {
+            let _ = self.current.pop();
         }
     }
 }
