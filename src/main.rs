@@ -3,12 +3,13 @@ mod event;
 mod keys;
 
 use std::fs::OpenOptions;
-use std::io::Write;
 use std::path::Path;
-// use std::process::Command;
 
 use controller::{cmd, KeyboardState};
-use event::{KeyEvent::*, KeyEventStream};
+use event::{
+    Key::{Pending, Press, Release},
+    KeyEventStream,
+};
 
 fn bind(ctrl: &mut KeyboardState) {
     ctrl.bind(&[keys::CTRL, keys::ALT, keys::F], cmd("echo hello world"));

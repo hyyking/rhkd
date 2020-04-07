@@ -8,7 +8,7 @@ const KEY_PRESS: i32 = 1;
 const EV_KEY: u16 = 1;
 
 #[derive(Debug)]
-pub enum KeyEvent {
+pub enum Key {
     Press(u16),
     Release(u16),
     Pending,
@@ -29,13 +29,6 @@ pub struct KeyEventStream {
     buf: [u8; 24],
 }
 
-impl Event {
-    #[inline]
-    pub fn matches_key(&self, key: u16) -> bool {
-        self.code == key
-    }
-}
-
 impl KeyEventStream {
     pub fn new(file: &Path) -> io::Result<Self> {
         let fd = File::open(file)?;
@@ -45,9 +38,10 @@ impl KeyEventStream {
 }
 
 impl Iterator for KeyEventStream {
-    type Item = io::Result<KeyEvent>;
+    type Item = io::Result<Key>;
+
     fn next(&mut self) -> Option<Self::Item> {
-        use self::KeyEvent::*;
+        use self::Key::{Pending, Press, Release};
         use std::{io::Read, mem};
 
         // this should be considerer as closed if we can't read the fd

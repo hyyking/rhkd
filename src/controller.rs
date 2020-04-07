@@ -33,7 +33,7 @@ impl KeyboardState {
     pub fn bind<S: IntoIterator<Item = &'static u16>>(&mut self, pattern: S, cmd: Command) {
         let mut m = 0;
         let mut keys = 0;
-        for key in pattern.into_iter() {
+        for key in pattern {
             match *key {
                 keys::ESC => m |= 2,
                 keys::CTRL => m |= 2 << 1,
