@@ -1,7 +1,10 @@
-use std::ffi::OsStr;
-use std::fs::File;
-use std::io::BufWriter;
-use std::process::{Command, Stdio};
+use std::{
+    cmp::Ordering,
+    ffi::OsStr,
+    fs::File,
+    io::BufWriter,
+    process::{Command, Stdio},
+};
 
 use fst::{Map, MapBuilder};
 
@@ -14,7 +17,7 @@ pub fn cmd<S: AsRef<OsStr>>(c: S) -> Command {
 
 type Error = ();
 
-#[derive(Debug, Copy, Clone, Eq, Ord, PartialOrd, PartialEq)]
+#[derive(Debug, Copy, Clone)]
 struct Bind {
     keys_idx: usize,
     keys: [u8; 12],
@@ -59,6 +62,26 @@ impl Bind {
     }
     fn is_empty(&self) -> bool {
         self.keys == [0; 12]
+    }
+}
+impl Eq for Bind {}
+
+impl Ord for Bind {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.partial_cmp(other).unwrap()
+    }
+}
+
+impl PartialOrd for Bind {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        let zipped = self.keys.iter().zip(other.keys.iter());
+        Some(zipped.fold(Ordering::Equal, |b, (s, o)| b.then(s.cmp(o))))
+    }
+}
+
+impl PartialEq for Bind {
+    fn eq(&self, other: &Self) -> bool {
+        self.keys == other.keys
     }
 }
 
@@ -147,7 +170,7 @@ impl Builder {
         Ok(Controler {
             inside: false,
             current: Bind::new(),
-            cmds: self.commands,
+            cmds: self.commands.into_boxed_slice(),
             map,
         })
     }
@@ -156,7 +179,7 @@ impl Builder {
 pub struct Controler {
     inside: bool,
     current: Bind,
-    cmds: Vec<Command>,
+    cmds: Box<[Command]>,
     map: Map<memmap::Mmap>,
 }
 
