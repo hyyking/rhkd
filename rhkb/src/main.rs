@@ -1,44 +1,67 @@
-mod controller;
-mod event;
-mod keys;
+#![feature(bool_to_option)]
 
-use std::fs::OpenOptions;
-use std::path::Path;
+extern crate fst;
+extern crate memmap;
+extern crate rhkb_lib;
 
-use controller::{cmd, KeyboardState};
-use event::{
-    Key::{Pending, Press, Release},
-    KeyEventStream,
+mod hotkeys;
+
+use std::{
+    fs::{self, DirBuilder, File, OpenOptions},
+    io::{self, BufWriter},
 };
 
-fn bind(ctrl: &mut KeyboardState) {
-    ctrl.bind(&[keys::CTRL, keys::ALT, keys::F], cmd("echo hello world"));
-    ctrl.init();
+use hotkeys::{cmd, Builder};
+
+use rhkb_lib::{
+    keyboard::{self, french},
+    Key::{Press, Release},
+    KeyboardInputStream,
+};
+
+const BASE_DIR: [&str; 3] = [env!("HOME"), ".config", "rhkb"];
+
+fn bind(ctrl: &mut Builder) {
+    ctrl.bind(
+        &[keyboard::CTRL, keyboard::ALT, french::F],
+        cmd("echo hello world"),
+    );
 }
 
-fn main() {
-    let mut log = OpenOptions::new()
-        .create(true)
-        .write(true)
-        .append(true)
-        .open("rhkd.log")
-        .unwrap();
+fn main() -> io::Result<()> {
+    let mut log = directory_setup()?;
 
-    let eventstream = KeyEventStream::new(Path::new("/dev/input/event3")).unwrap();
-    let mut ctrl = KeyboardState::new(5);
-    bind(&mut ctrl);
+    let eventstream = KeyboardInputStream::new("/dev/input/event3").unwrap();
+    let mut builder = Builder::new(10, true);
+    bind(&mut builder);
+
+    let mut ctrl = builder.finish("/home/hyyking/.config/rhkb/keys.fst")?;
 
     for event in eventstream {
-        match event {
-            Ok(Press(key)) => {
-                ctrl.register_press(key);
-            }
-            Ok(Release(key)) => ctrl.register_release(key),
-            Ok(Pending) => {}
-            Err(e) => panic!(e),
+        match event? {
+            Press(key) => ctrl.register_press(key),
+            Release(key) => ctrl.register_release(key),
+            _ => {}
         }
         ctrl.update(&mut log);
     }
+    Ok(())
+}
+
+fn directory_setup() -> io::Result<BufWriter<File>> {
+    use std::path::PathBuf;
+
+    let mut path: PathBuf = BASE_DIR.iter().collect();
+    path.push("rhkd.log");
+
+    let _ = DirBuilder::new()
+        .recursive(true)
+        .create(path.parent().unwrap())?;
+
+    let _ = fs::remove_file(&path);
+
+    let file = OpenOptions::new().create(true).append(true).open(&path)?;
+    Ok(BufWriter::new(file))
 }
 
 /*

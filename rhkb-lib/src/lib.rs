@@ -1,22 +1,25 @@
-use std::fs::File;
-use std::io;
-use std::path::Path;
+pub mod keyboard;
+
+use std::{
+    fs::File,
+    io::{self, Read},
+    mem,
+    path::Path,
+};
 
 const KEY_RELEASE: i32 = 0;
 const KEY_PRESS: i32 = 1;
-
 const EV_KEY: u16 = 1;
 
 #[derive(Debug)]
 pub enum Key {
     Press(u16),
     Release(u16),
-    Pending,
+    Other,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
 #[repr(C)]
-pub struct Event {
+struct Event {
     tv_sec: isize,
     tv_usec: isize,
     pub kind: u16,
@@ -24,48 +27,41 @@ pub struct Event {
     pub value: i32,
 }
 
-pub struct KeyEventStream {
+pub struct KeyboardInputStream {
     fd: File,
     buf: [u8; 24],
 }
 
-impl KeyEventStream {
-    pub fn new(file: &Path) -> io::Result<Self> {
+impl KeyboardInputStream {
+    pub fn new<T: AsRef<Path>>(file: T) -> io::Result<Self> {
         let fd = File::open(file)?;
         let buf = [0; 24];
         Ok(Self { fd, buf })
     }
 }
 
-impl Iterator for KeyEventStream {
+impl Iterator for KeyboardInputStream {
     type Item = io::Result<Key>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        use self::Key::{Pending, Press, Release};
-        use std::{io::Read, mem};
-
-        // this should be considerer as closed if we can't read the fd
         let read = match self.fd.read(&mut self.buf) {
             Ok(read) => read,
             Err(err) => return Some(Err(err)),
         };
-
         if read != mem::size_of::<Event>() {
             return Some(Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "not enough bytes to read event",
             )));
         }
+
         let event = unsafe { mem::transmute_copy::<_, Event>(&self.buf) };
-        if event.kind == EV_KEY {
-            let var = match event.value {
-                KEY_PRESS => Press(event.code),
-                KEY_RELEASE => Release(event.code),
-                _ => Pending,
-            };
-            Some(Ok(var))
-        } else {
-            Some(Ok(Pending))
-        }
+
+        let decoded = match (event.kind, event.value) {
+            (EV_KEY, KEY_PRESS) => Key::Press(event.code),
+            (EV_KEY, KEY_RELEASE) => Key::Release(event.code),
+            (_, _) => Key::Other,
+        };
+        Some(Ok(decoded))
     }
 }
