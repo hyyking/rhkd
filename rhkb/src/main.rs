@@ -1,14 +1,16 @@
-#![feature(bool_to_option)]
+#![feature(bool_to_option, with_options)]
 
 extern crate fst;
 extern crate memmap;
 extern crate rhkb_lib;
+extern crate structopt;
 
 mod hotkeys;
 
 use std::{
-    fs::{self, DirBuilder, File, OpenOptions},
+    fs::{DirBuilder, File},
     io::{self, BufWriter},
+    path::PathBuf,
 };
 
 use hotkeys::{cmd, Builder};
@@ -18,21 +20,39 @@ use rhkb_lib::{
     Key::{Press, Release},
     KeyboardInputStream,
 };
+use structopt::StructOpt;
 
 const BASE_DIR: [&str; 3] = [env!("HOME"), ".config", "rhkb"];
 
 fn bind(ctrl: &mut Builder) {
-    ctrl.bind(&[keyboard::MOD, french::D], cmd("alacritty"));
+    ctrl.bind(
+        &[french::H, french::J, french::K, french::L],
+        cmd("alacritty"),
+    );
 }
 
 fn main() -> io::Result<()> {
-    let mut log = directory_setup()?;
+    let parsed = Config::from_args();
+    if parsed.log.is_none() || parsed.fst.is_none() {
+        build_config_dir()?;
+    }
 
-    let eventstream = KeyboardInputStream::new("/dev/input/event3").unwrap();
-    let mut builder = Builder::new(10, true);
+    let mut log = get_logger(parsed.log.as_ref()).transpose()?;
+    let socket = parsed
+        .keyboard
+        .unwrap_or_else(|| "/dev/input/event3".into());
+
+    let fst = parsed.fst.unwrap_or_else(|| {
+        let mut base: PathBuf = BASE_DIR.iter().collect();
+        base.push("hk.fst");
+        base
+    });
+
+    let eventstream = KeyboardInputStream::new(socket).expect("couldn't read socket");
+    let mut builder = Builder::new(10, parsed.update);
     bind(&mut builder);
 
-    let mut ctrl = builder.finish("/home/hyyking/.config/rhkb/keys.fst")?;
+    let mut ctrl = builder.finish(fst)?;
 
     for event in eventstream {
         match event? {
@@ -40,80 +60,52 @@ fn main() -> io::Result<()> {
             Release(key) => ctrl.register_release(key),
             _ => {}
         }
-        ctrl.update(&mut log);
+        ctrl.update(log.as_mut())?;
     }
     Ok(())
 }
 
-fn directory_setup() -> io::Result<BufWriter<File>> {
-    use std::path::PathBuf;
+fn build_config_dir() -> io::Result<()> {
+    let path: PathBuf = BASE_DIR.iter().collect();
+    DirBuilder::new().recursive(true).create(path)
+}
 
+fn get_logger(log: Option<&PathBuf>) -> Option<io::Result<BufWriter<File>>> {
     let mut path: PathBuf = BASE_DIR.iter().collect();
-    path.push("rhkd.log");
+    let log = log.unwrap_or_else(|| {
+        path.push("rhkd.log");
+        &path
+    });
 
-    DirBuilder::new()
-        .recursive(true)
-        .create(path.parent().unwrap())?;
+    if log.as_os_str() == "no" {
+        return None;
+    }
 
-    let _ = fs::remove_file(&path);
-
-    let file = OpenOptions::new().create(true).append(true).open(&path)?;
-    Ok(BufWriter::new(file))
+    Some(File::create(&path).map(|file| BufWriter::new(file)))
 }
 
-/*
-#[derive(Debug)]
+#[derive(Debug, StructOpt)]
+#[structopt(name = "rhkb", about = "Rust Hotkey Daemon")]
 struct Config {
+    #[structopt(short, long, help = "rebuilds the hotkey fst at the start")]
+    update: bool,
 
+    #[structopt(
+        short,
+        long,
+        parse(from_os_str),
+        help = "keyboard socket (requires at least read access)"
+    )]
+    keyboard: Option<PathBuf>,
+
+    #[structopt(
+        short,
+        long,
+        parse(from_os_str),
+        help = "directory in which to store the fst"
+    )]
+    fst: Option<PathBuf>,
+
+    #[structopt(long, parse(from_os_str), help = "path of the loging file")]
+    log: Option<PathBuf>,
 }
-
-fn parse_args() -> Config {
-    let device_file = get_default_device();
-    let log_file = "keys.log".to_owned();
-
-    Config {
-        device_file,
-        log_file,
-    }
-}
-
-fn get_default_device() -> String {
-    let mut filenames = get_keyboard_device_filenames();
-
-    if filenames.len() == 1 {
-        filenames.swap_remove(0)
-    } else {
-        panic!(
-            "The following keyboard devices were detected: {:?}. Please select one using \
-                the `-d` flag",
-            filenames
-        );
-    }
-}
-
-// Detects and returns the name of the keyboard device file. This function uses
-// the fact that all device information is shown in /proc/bus/input/devices and
-// the keyboard device file should always have an EV of 120013
-fn get_keyboard_device_filenames() -> Vec<String> {
-    let mut command_str = "grep -E 'Handlers|EV' /proc/bus/input/devices".to_string();
-    command_str.push_str("| grep -B1 120013");
-    command_str.push_str("| grep -Eo event[0-9]+");
-
-    let res = Command::new("sh")
-        .arg("-c")
-        .arg(command_str)
-        .output()
-        .unwrap_or_else(|e| {
-            panic!("{}", e);
-        });
-    let res_str = std::str::from_utf8(&res.stdout).unwrap();
-
-    let mut filenames = Vec::new();
-    for file in res_str.trim().split('\n') {
-        let mut filename = "/dev/input/".to_string();
-        filename.push_str(file);
-        filenames.push(filename);
-    }
-    filenames
-}
-*/

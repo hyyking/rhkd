@@ -5,5 +5,6 @@ authors = ["Léo Duret <leoduret@outlook.com>"]
 
 [dependencies]
 rhkb_lib = {path="../rhkb-lib"}
-fst = "0.4.1"
+fst = "0.4"
 memmap = "0.7"
+structopt = "0.3"

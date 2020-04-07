@@ -1,5 +1,5 @@
 use std::ffi::OsStr;
-use std::fs::{File, OpenOptions};
+use std::fs::File;
 use std::io::BufWriter;
 use std::process::{Command, Stdio};
 
@@ -112,6 +112,7 @@ impl Builder {
             // not in reset mode so no need to keep track of the keys
             return self;
         }
+
         let binds = self.binds.as_mut().expect("should be set");
         let mut current = Bind::new();
 
@@ -127,9 +128,13 @@ impl Builder {
     }
 
     pub fn finish<T: AsRef<std::path::Path>>(mut self, path: T) -> std::io::Result<Controler> {
+        let file = File::with_options()
+            .read(true)
+            .write(self.binds.is_some()) // will get write access if we need to update
+            .open(path)?;
+
         if let Some(mut binds) = self.binds.take() {
-            let file = OpenOptions::new().write(true).open(&path)?;
-            let mut map = MapBuilder::new(BufWriter::new(file)).unwrap();
+            let mut map = MapBuilder::new(BufWriter::new(&file)).unwrap();
             binds.as_mut_slice().sort_unstable_by_key(|el| el.0);
             for (bind, key) in binds {
                 map.insert(bind, key).unwrap();
@@ -137,11 +142,10 @@ impl Builder {
             map.finish().unwrap();
         }
 
-        let file = File::open(path)?;
         let mm = unsafe { memmap::Mmap::map(&file)? };
         let map = Map::new(mm).expect("couldn't load map");
         Ok(Controler {
-            _fd: file,
+            inside: false,
             current: Bind::new(),
             cmds: self.commands,
             map,
@@ -150,16 +154,31 @@ impl Builder {
 }
 
 pub struct Controler {
-    _fd: File,
+    inside: bool,
     current: Bind,
     cmds: Vec<Command>,
     map: Map<memmap::Mmap>,
 }
 
 impl Controler {
-    pub fn update<T: std::io::Write>(&mut self, log: &mut T) {
-        if let Some(idx) = self.map.get(self.current) {
-            writeln!(log, "{:?}", self.cmds[idx as usize].output()).expect("couldn't write")
+    pub fn update<T: std::io::Write>(&mut self, log: Option<&mut T>) -> std::io::Result<()> {
+        if self.current.is_empty() {
+            self.inside = false;
+        }
+
+        if self.inside {
+            return Ok(());
+        }
+
+        let output = self.map.get(self.current).map(|idx| {
+            self.inside = true;
+            self.cmds[idx as usize].spawn()
+        });
+
+        if let (Some(ref output), Some(ref mut logger)) = (output.transpose()?, log) {
+            writeln!(logger, "spawned program {:?}", output.id())
+        } else {
+            Ok(())
         }
     }
 
