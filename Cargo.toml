@@ -1,0 +1,6 @@
+[package]
+name = "rhkb"
+version = "0.1.0"
+authors = ["Léo Duret <leoduret@outlook.com>"]
+
+[dependencies]
