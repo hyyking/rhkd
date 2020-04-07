@@ -81,7 +81,7 @@ fn get_logger(log: Option<&PathBuf>) -> Option<io::Result<BufWriter<File>>> {
         return None;
     }
 
-    Some(File::create(&path).map(|file| BufWriter::new(file)))
+    Some(File::create(&path).map(BufWriter::new))
 }
 
 #[derive(Debug, StructOpt)]

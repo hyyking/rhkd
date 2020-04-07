@@ -172,6 +172,8 @@ impl Controler {
 
         let output = self.map.get(self.current).map(|idx| {
             self.inside = true;
+
+            #[allow(clippy::cast_possible_truncation)] // we know this is a usize
             self.cmds[idx as usize].spawn()
         });
 
