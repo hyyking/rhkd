@@ -9,6 +9,11 @@ pub const SPACE: u16 = 57;
 pub const TAB: u16 = 15;
 pub const MAJ: u16 = 58;
 
+pub const LEFT: u16 = 105;
+pub const RIGHT: u16 = 106;
+pub const UP: u16 = 103;
+pub const DOWN: u16 = 108;
+
 pub mod french {
     pub const A: u16 = 16;
     pub const Z: u16 = 17;

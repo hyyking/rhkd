@@ -1,32 +1,21 @@
-use std::{
-    cmp::Ordering,
-    ffi::OsStr,
-    fs::File,
-    io::BufWriter,
-    process::{Command, Stdio},
-};
+use std::{cmp::Ordering, fs::File, io::BufWriter, process::Command};
 
 use fst::{Map, MapBuilder};
 
-pub fn cmd<S: AsRef<OsStr>>(c: S) -> Command {
-    let mut cmd = Command::new("sh");
-    cmd.arg("-c").arg(c);
-    cmd.stdin(Stdio::null());
-    cmd
-}
-
 type Error = ();
+
+const BUFFER_SIZE: usize = 32;
 
 #[derive(Debug, Copy, Clone)]
 struct Bind {
     keys_idx: usize,
-    keys: [u8; 12],
+    keys: [u8; 32],
 }
 impl Bind {
     fn new() -> Self {
         Self {
             keys_idx: 2,
-            keys: [0; 12],
+            keys: [0; BUFFER_SIZE],
         }
     }
     fn add_mod(&mut self, key: u16) {
@@ -40,7 +29,7 @@ impl Bind {
         self.keys[1] &= !second;
     }
     fn add_key(&mut self, key: u16) -> Result<(), Error> {
-        if self.keys_idx == 12 {
+        if self.keys_idx == BUFFER_SIZE {
             return Err(());
         }
         let [first, second] = key.to_ne_bytes();
@@ -61,7 +50,7 @@ impl Bind {
         Some(u16::from_ne_bytes(order))
     }
     fn is_empty(&self) -> bool {
-        self.keys == [0; 12]
+        self.keys == [0; BUFFER_SIZE]
     }
 }
 impl Eq for Bind {}
@@ -159,9 +148,8 @@ impl Builder {
         if let Some(mut binds) = self.binds.take() {
             let mut map = MapBuilder::new(BufWriter::new(&file)).unwrap();
             binds.as_mut_slice().sort_unstable_by_key(|el| el.0);
-            for (bind, key) in binds {
-                map.insert(bind, key).unwrap();
-            }
+            map.extend_iter(binds.into_iter())
+                .expect("can't bind the same pattern twice");
             map.finish().unwrap();
         }
 
@@ -210,7 +198,9 @@ impl Controler {
     pub fn register_press(&mut self, key: u16) {
         match is_control_character(key) {
             Ok(ctrl) => self.current.add_mod(ctrl),
-            Err(key) => self.current.add_key(key).expect("buffer overflow"),
+            Err(key) => {
+                let _ = self.current.add_key(key);
+            }
         }
     }
     pub fn register_release(&mut self, key: u16) {

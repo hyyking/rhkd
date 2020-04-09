@@ -5,6 +5,7 @@ extern crate memmap;
 extern crate rhkb_lib;
 extern crate structopt;
 
+mod binds;
 mod hotkeys;
 
 use std::{
@@ -13,23 +14,17 @@ use std::{
     path::PathBuf,
 };
 
-use hotkeys::{cmd, Builder};
+use binds::bind;
+use hotkeys::Builder;
 
 use rhkb_lib::{
-    keyboard::{self, french},
     Key::{Press, Release},
     KeyboardInputStream,
 };
+
 use structopt::StructOpt;
 
 const BASE_DIR: [&str; 3] = [env!("HOME"), ".config", "rhkb"];
-
-fn bind(ctrl: &mut Builder) {
-    ctrl.bind(
-        &[french::H, french::J, french::K, french::L],
-        cmd("alacritty"),
-    );
-}
 
 fn main() -> io::Result<()> {
     let parsed = Config::from_args();
@@ -49,7 +44,7 @@ fn main() -> io::Result<()> {
     });
 
     let eventstream = KeyboardInputStream::new(socket).expect("couldn't read socket");
-    let mut builder = Builder::new(10, parsed.update);
+    let mut builder = Builder::new(40, parsed.update);
     bind(&mut builder);
 
     let mut ctrl = builder.finish(fst)?;
