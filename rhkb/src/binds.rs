@@ -10,21 +10,18 @@ pub fn bind(ctrl: &mut Builder) {
 }
 
 fn bind_user(ctrl: &mut Builder) {
-    ctrl.bind(&[keyboard::MOD, french::E], Command::new("alacritty"));
-    ctrl.bind(&[keyboard::MOD, french::Z], Command::new("pcmanfm"));
-    ctrl.bind(
-        &[keyboard::MOD, french::A],
-        shell("/home/hyyking/.xmonad/scripts/browser.sh"),
-    );
-    ctrl.bind(&[keyboard::MOD, french::Q], Command::new("dmenu_run"));
+    ctrl.bind(&[MOD, E], Command::new("alacritty"));
+    ctrl.bind(&[MOD, Z], Command::new("pcmanfm"));
+    ctrl.bind(&[MOD, A], shell("/home/hyyking/.xmonad/scripts/browser.sh"));
+    ctrl.bind(&[MOD, Q], Command::new("dmenu_run"));
 }
 
 fn bind_bspwm(ctrl: &mut Builder) {
-    /// switch workspaces
-    ctrl.bind(&[CTRL, ALT, RIGHT], bspwm(&["desktop", "-f", "next.local"]));
-    ctrl.bind(&[CTRL, ALT, LEFT], bspwm(&["desktop", "-f", "prev.local"]));
+    // switch workspaces
+    ctrl.bind(&[CTRL, ALT, RIGHT], bspc(&["desktop", "-f", "next.local"]));
+    ctrl.bind(&[CTRL, ALT, LEFT], bspc(&["desktop", "-f", "prev.local"]));
 
-    /// move window to different workspace
+    // move window to different workspace
     ctrl.bind(
         &[CTRL, L_SHIFT, ALT, LEFT],
         bspc(&["node", "-d", "prev.local", "--follow"]),
@@ -34,19 +31,13 @@ fn bind_bspwm(ctrl: &mut Builder) {
         bspc(&["node", "-d", "next.local", "--follow"]),
     );
 
-    /// reload bspwm
-    ctrl.bind(
-        &[MOD, :ALT, french::R],
-        bspc(&["wm", "-r"]),
-    );
+    // reload bspwm
+    ctrl.bind(&[MOD, ALT, R], bspc(&["wm", "-r"]));
 
-    /// super + {_,shift + }c
-    ///     bspc node -{c,k}
-    ctrl.bind(&[keyboard::MOD, french::C], bspwm(&["node", "-c"]));
-    ctrl.bind(
-        &[keyboard::MOD, keyboard::L_SHIFT, french::C],
-        bspc(&["node", "-k"]),
-    );
+    // super + {_,shift + }c
+    //     bspc node -{c,k}
+    ctrl.bind(&[MOD, C], bspc(&["node", "-c"]));
+    ctrl.bind(&[MOD, L_SHIFT, C], bspc(&["node", "-k"]));
 }
 
 /*
@@ -60,7 +51,7 @@ super + {_,shift + }c
     bspc node -{c,k}
  * */
 
-fn bspwm<I, S>(args: I) -> Command
+fn bspc<I, S>(args: I) -> Command
 where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
