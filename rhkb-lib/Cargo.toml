@@ -8,3 +8,4 @@ edition = "2018"
 
 [dependencies]
 x11 = {version = "*", features=["xlib"]}
+libc = "0.2"
