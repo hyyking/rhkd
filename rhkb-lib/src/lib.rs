@@ -7,63 +7,99 @@ use std::{
     path::Path,
 };
 
-const KEY_RELEASE: i32 = 0;
-const KEY_PRESS: i32 = 1;
-const EV_KEY: u16 = 1;
+use keyboard::KeyCommand;
+use x11::xlib::{
+    self, Display, KeyPress as KEY_PRESS, KeyRelease as KEY_RELEASE, XDefaultScreenOfDisplay,
+    XEvent, XFlush, XKeyPressedEvent, XKeyReleasedEvent, XKeycodeToKeysym, XNextEvent,
+    XOpenDisplay, XRootWindowOfScreen,
+};
 
 #[derive(Debug)]
 pub enum Key {
-    Press(u16),
-    Release(u16),
+    Press(KeyCommand),
+    Release(KeyCommand),
     Other,
 }
 
 pub struct KeyboardInputStream {
-    fd: File,
-    buf: [u8; 24],
+    display: *mut Display,
+    root: u64,
+    event_buff: XEvent,
 }
 
 impl KeyboardInputStream {
     /// # Errors
     /// Will throw an error if the file can't be open
-    pub fn new<T: AsRef<Path>>(file: T) -> io::Result<Self> {
-        let fd = File::open(file)?;
-        let buf = [0; 24];
-        Ok(Self { fd, buf })
-    }
-}
+    pub fn new() -> io::Result<Self> {
+        let event_buff = XEvent { pad: [0; 24] };
+        let (display, root) = unsafe {
+            let display = XOpenDisplay(std::ptr::null());
 
-#[repr(C)]
-struct Event {
-    tv_sec: isize,
-    tv_usec: isize,
-    kind: u16,
-    code: u16,
-    value: i32,
+            if display == std::ptr::null_mut() {
+                panic!("Couldn't access display {}", env!("DISPLAY"));
+            }
+
+            let screen = XDefaultScreenOfDisplay(display);
+            let root = XRootWindowOfScreen(screen);
+            (display, root)
+        };
+
+        Ok(Self {
+            display,
+            root,
+            event_buff,
+        })
+    }
+    pub fn grab<'a, T>(&self, grab: T) -> io::Result<()>
+    where
+        T: IntoIterator<Item = &'a KeyCommand>,
+    {
+        for key in grab.into_iter() {
+            unsafe {
+                xlib::XGrabKey(
+                    self.display,
+                    xlib::XKeysymToKeycode(self.display, key.sym) as i32,
+                    key.mask,
+                    self.root,
+                    1,
+                    1,
+                    1,
+                );
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Iterator for KeyboardInputStream {
     type Item = io::Result<Key>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let read = match self.fd.read(&mut self.buf) {
-            Ok(read) => read,
-            Err(err) => return Some(Err(err)),
-        };
-        if read != mem::size_of::<Event>() {
-            return Some(Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                "not enough bytes to read event",
-            )));
+        dbg!(self.event_buff);
+        unsafe {
+            XNextEvent(self.display, &mut self.event_buff);
         }
 
-        let event = unsafe { mem::transmute_copy::<_, Event>(&self.buf) };
-
-        let decoded = match (event.kind, event.value) {
-            (EV_KEY, KEY_PRESS) => Key::Press(event.code),
-            (EV_KEY, KEY_RELEASE) => Key::Release(event.code),
-            (_, _) => Key::Other,
+        let event_type = self.event_buff.get_type();
+        let event = match event_type {
+            KEY_PRESS => unsafe {
+                let event = XKeyPressedEvent::from(self.event_buff);
+                let key = KeyCommand {
+                    sym: XKeycodeToKeysym(self.display, event.keycode as u8, 0) as u64,
+                    mask: 0xEF & event.state as u32,
+                };
+                Key::Press(key)
+            },
+            KEY_RELEASE => unsafe {
+                let event = XKeyReleasedEvent::from(self.event_buff);
+                let key = KeyCommand {
+                    sym: XKeycodeToKeysym(self.display, event.keycode as u8, 0) as u64,
+                    mask: 0xEF & event.state as u32,
+                };
+                Key::Release(key)
+            },
+            _ => Key::Other,
         };
-        Some(Ok(decoded))
+        Some(Ok(event))
     }
 }

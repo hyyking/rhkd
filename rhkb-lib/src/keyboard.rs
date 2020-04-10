@@ -42,3 +42,40 @@ pub mod french {
     pub const B: u16 = 48;
     pub const N: u16 = 49;
 }
+
+use std::convert::TryInto;
+use std::ffi::CString;
+use x11::xlib::XStringToKeysym;
+
+#[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
+pub struct KeyCommand {
+    pub mask: u32,
+    pub sym: u64,
+}
+
+enum KeySym {
+    Mask(u32),
+    Code(u64),
+}
+
+pub fn into_keysym(key: &str) -> u64 {
+    CString::new(key)
+        .map(|cs| unsafe { XStringToKeysym(cs.as_ptr()) })
+        .expect("ffi::NulError")
+}
+
+impl TryInto<KeySym> for &'static str {
+    type Error = std::ffi::NulError;
+
+    fn try_into(self) -> Result<KeySym, Self::Error> {
+        let keysim = CString::new(self).map(|cs| unsafe { XStringToKeysym(cs.as_ptr()) })?;
+        Ok(KeySym::Code(keysim as u64))
+    }
+}
+
+impl TryInto<KeySym> for &u32 {
+    type Error = std::ffi::NulError;
+    fn try_into(self) -> Result<KeySym, Self::Error> {
+        Ok(KeySym::Mask(*self))
+    }
+}

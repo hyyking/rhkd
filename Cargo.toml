@@ -1,2 +1,2 @@
 [workspace]
-members = ["rhkb-lib", "rhkb"]
+members = ["rhkb-lib", "rhkb", "libtest"]
