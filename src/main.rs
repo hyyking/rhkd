@@ -27,6 +27,7 @@ use structopt::StructOpt;
 fn bind(b: &mut Builder) {
     use std::process::Command;
 
+    b.bind("ctrl + shift + b", Command::new("exa"));
     b.bind("ctrl + shift + u", Command::new("ls"));
 }
 
@@ -39,9 +40,9 @@ fn main() -> io::Result<()> {
     let fst = parsed.fst.unwrap_or_else(|| PathBuf::from("/tmp/rhkb.fst"));
 
     let mut eventstream = Keyboard::new().expect("couldn't connect to X11 server");
-    let mut builder = Builder::new(eventstream.context()?, 40);
+    let mut builder = Builder::new(fst, eventstream.context()?)?;
     bind(&mut builder);
-    let mut ctrl = builder.finish(fst)?;
+    let mut ctrl = builder.finish()?;
 
     loop {
         match eventstream.poll() {

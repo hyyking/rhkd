@@ -16,17 +16,23 @@ pub struct Controler<'a> {
 
 pub struct Builder<'a> {
     commands: Vec<Command>,
-    binds: Vec<([u8; 12], u64)>,
+    map: MapBuilder<BufWriter<File>>,
     grab: GrabContext<'a>,
 }
 
 impl<'a> Builder<'a> {
-    pub fn new(grab: GrabContext<'a>, cap: usize) -> Self {
-        Self {
-            commands: Vec::with_capacity(cap),
-            binds: Vec::with_capacity(cap),
+    pub fn new<T: AsRef<std::path::Path>>(path: T, grab: GrabContext<'a>) -> io::Result<Self> {
+        let _ = fs::remove_file(&path);
+        let file = File::with_options()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(path)?;
+        Ok(Self {
+            commands: Vec::with_capacity(128),
+            map: MapBuilder::new(BufWriter::new(file)).map_err(fsterror_to_io)?,
             grab,
-        }
+        })
     }
 
     pub fn bind(&mut self, pattern: &str, cmd: Command) -> &mut Self {
@@ -37,37 +43,26 @@ impl<'a> Builder<'a> {
 
         let index = self.commands.len();
         self.commands.push(cmd);
-        self.binds.push((key.into(), index as u64));
+        self.map
+            .insert(Into::<[u8; 12]>::into(key), index as u64)
+            .expect("couldn't access map");
         self
     }
 
-    pub fn finish<T: AsRef<std::path::Path>>(mut self, path: T) -> io::Result<Controler<'a>> {
-        let _ = fs::remove_file(&path);
-        let file = File::with_options()
-            .read(true)
-            .write(true)
-            .create(true)
-            .open(path)?;
-
-        let map = self.build_map(file).expect("couldn't build map");
+    pub fn finish(self) -> io::Result<Controler<'a>> {
         let cmds = self.commands.into_boxed_slice();
-
+        let file = self
+            .map
+            .into_inner()
+            .map_err(fsterror_to_io)?
+            .into_inner()
+            .expect("issue with the inner bufwriter");
+        let map = Map::new(unsafe { memmap::Mmap::map(&file)? }).map_err(fsterror_to_io)?;
         Ok(Controler {
             cmds,
             map,
             _grab: Some(self.grab),
         })
-    }
-
-    fn build_map(&mut self, file: File) -> io::Result<Map<memmap::Mmap>> {
-        self.binds.as_mut_slice().sort_unstable_by_key(|(b, _)| *b);
-        let mut map = MapBuilder::new(BufWriter::new(&file)).map_err(fsterror_to_io)?;
-
-        map.extend_iter(self.binds.drain(..))
-            .map_err(fsterror_to_io)?;
-        map.finish().map_err(fsterror_to_io)?;
-
-        Map::new(unsafe { memmap::Mmap::map(&file)? }).map_err(fsterror_to_io)
     }
 }
 
