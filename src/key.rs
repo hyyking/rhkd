@@ -1,3 +1,13 @@
+use std::str::FromStr;
+
+pub type Error = ();
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+enum Either<A, B> {
+    A(A),
+    B(B),
+}
+
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Key {
     pub mask: u32,
@@ -15,20 +25,12 @@ impl Into<[u8; 12]> for Key {
     }
 }
 
-use std::str::FromStr;
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-enum Either<A, B> {
-    A(A),
-    B(B),
-}
-
 impl FromStr for Key {
     type Err = ();
-    fn from_str(input: &str) -> Result<Key, ()> {
+    fn from_str(input: &str) -> Result<Key, Error> {
         let mut key = Key { mask: 0, sym: 0 };
 
-        for k in input.split("+") {
+        for k in input.split('+') {
             let k = k.trim();
             k.to_ascii_lowercase();
 

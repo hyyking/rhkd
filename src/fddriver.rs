@@ -1,7 +1,4 @@
-use std::io;
-use std::mem::MaybeUninit;
-use std::os::unix::io::RawFd;
-use std::task::Poll;
+use std::{io, mem::MaybeUninit, os::unix::io::RawFd, task::Poll};
 
 use libc::{fd_set as FdSet, timeval as Timeval};
 
@@ -13,7 +10,7 @@ pub struct FdDriver {
 
 impl FdDriver {
     pub fn new(fd: RawFd) -> Self {
-        // safety used by reset which is called before any read
+        // safety: used by reset which is called before any read
         let set = unsafe { MaybeUninit::zeroed().assume_init() };
 
         let timer = Timeval {
@@ -33,7 +30,7 @@ impl FdDriver {
             Some(&mut self.timer),
         );
 
-        match sel.as_ref().map_err(|e| e.kind()) {
+        match sel.as_ref().map_err(io::Error::kind) {
             Ok(_) => Poll::Ready(Ok(())),
             Err(io::ErrorKind::WouldBlock) => Poll::Pending,
             Err(_) => Poll::Ready(sel.map(|_| ())),
@@ -63,10 +60,10 @@ fn select(
     es: Option<&mut FdSet>,
     tv: Option<&mut Timeval>,
 ) -> io::Result<i32> {
-    let rs = rs.map(|r| r as *mut _).unwrap_or(std::ptr::null_mut());
-    let ws = ws.map(|r| r as *mut _).unwrap_or(std::ptr::null_mut());
-    let es = es.map(|r| r as *mut _).unwrap_or(std::ptr::null_mut());
-    let tv = tv.map(|r| r as *mut _).unwrap_or(std::ptr::null_mut());
+    let rs = rs.map_or(std::ptr::null_mut(), |r| r as *mut _);
+    let ws = ws.map_or(std::ptr::null_mut(), |r| r as *mut _);
+    let es = es.map_or(std::ptr::null_mut(), |r| r as *mut _);
+    let tv = tv.map_or(std::ptr::null_mut(), |r| r as *mut _);
 
     let ret = unsafe { libc::select(fd, rs, ws, es, tv) };
 

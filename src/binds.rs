@@ -2,8 +2,6 @@ use std::{ffi::OsStr, process::Command};
 
 use super::hotkeys::Builder;
 
-use rhkb_lib::keyboard::{french::*, *};
-
 pub fn bind(ctrl: &mut Builder) {
     bind_user(ctrl);
     bind_bspwm(ctrl);

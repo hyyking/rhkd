@@ -1,2 +1,11 @@
-[workspace]
-members = ["rhkb-lib", "rhkb"]
+[package]
+name = "rhkb"
+version = "0.1.0"
+authors = ["Léo Duret <leoduret@outlook.com>"]
+
+[dependencies]
+x11 = {version = "2.18", features=["xlib"]}
+libc = "0.2"
+fst = "0.4"
+memmap = "0.7"
+structopt = { version = "0.3", default-features = false }
