@@ -58,7 +58,7 @@ fn parse_convert_modifier(k: &str) -> Either<u32, u64> {
     }
 }
 
-pub fn into_keysym(key: &str) -> Result<u64, &'static str> {
+fn into_keysym(key: &str) -> Result<u64, &'static str> {
     let cs = std::ffi::CString::new(key).expect("couldn't create new cstring");
     match unsafe { x11::xlib::XStringToKeysym(cs.as_ptr()) } {
         0 => Err("Unmatched key"),

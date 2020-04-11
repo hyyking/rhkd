@@ -1,3 +1,4 @@
+use std::io;
 use std::mem::MaybeUninit;
 use std::os::unix::io::RawFd;
 use std::task::Poll;
@@ -12,34 +13,30 @@ pub struct FdDriver {
 
 impl FdDriver {
     pub fn new(fd: RawFd) -> Self {
-        let set = unsafe {
-            let mut set: MaybeUninit<FdSet> = MaybeUninit::uninit();
-            libc::FD_ZERO(set.as_mut_ptr());
-            set.assume_init()
-        };
+        // safety used by reset which is called before any read
+        let set = unsafe { MaybeUninit::zeroed().assume_init() };
+
         let timer = Timeval {
             tv_sec: 1,
             tv_usec: 0,
         };
         Self { fd, set, timer }
     }
-    pub fn poll_read(&mut self) -> Poll<Result<(), i32>> {
-        self.reset(); // rest state
+    pub fn poll_read(&mut self) -> Poll<io::Result<()>> {
+        self.reset(); // reset state
 
-        let nmb = unsafe {
-            libc::select(
-                self.fd + 1,
-                &mut self.set,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
-                &mut self.timer,
-            )
-        };
-        match nmb {
-            a if a < 0 => Poll::Ready(Err(a)),
-            a if a == 0 => Poll::Pending,
-            a if a > 0 => Poll::Ready(Ok(())),
-            _ => unreachable!(),
+        let sel = select(
+            self.fd + 1,
+            Some(&mut self.set),
+            None,
+            None,
+            Some(&mut self.timer),
+        );
+
+        match sel.as_ref().map_err(|e| e.kind()) {
+            Ok(_) => Poll::Ready(Ok(())),
+            Err(io::ErrorKind::WouldBlock) => Poll::Pending,
+            Err(_) => Poll::Ready(sel.map(|_| ())),
         }
     }
 
@@ -55,5 +52,27 @@ impl FdDriver {
             FD_ZERO(&mut self.set);
             FD_SET(self.fd, &mut self.set);
         };
+    }
+}
+
+// safe rust wrapper
+fn select(
+    fd: RawFd,
+    rs: Option<&mut FdSet>,
+    ws: Option<&mut FdSet>,
+    es: Option<&mut FdSet>,
+    tv: Option<&mut Timeval>,
+) -> io::Result<i32> {
+    let rs = rs.map(|r| r as *mut _).unwrap_or(std::ptr::null_mut());
+    let ws = ws.map(|r| r as *mut _).unwrap_or(std::ptr::null_mut());
+    let es = es.map(|r| r as *mut _).unwrap_or(std::ptr::null_mut());
+    let tv = tv.map(|r| r as *mut _).unwrap_or(std::ptr::null_mut());
+
+    let ret = unsafe { libc::select(fd, rs, ws, es, tv) };
+
+    if ret <= 0 {
+        Err(io::Error::last_os_error())
+    } else {
+        Ok(ret)
     }
 }

@@ -1,4 +1,8 @@
-use std::{fs::File, io::BufWriter, process::Command};
+use std::{
+    fs::{remove_file, File},
+    io::BufWriter,
+    process::Command,
+};
 
 use rhkb_lib::{keyboard::Key, Grabber};
 
@@ -32,6 +36,7 @@ impl<'a> Builder<'a> {
     }
 
     pub fn finish<T: AsRef<std::path::Path>>(mut self, path: T) -> std::io::Result<Controler<'a>> {
+        let _ = remove_file(&path);
         let file = File::with_options()
             .read(true)
             .write(true)
@@ -66,7 +71,7 @@ impl<'a> Builder<'a> {
 pub struct Controler<'a> {
     cmds: Box<[Command]>,
     map: Map<memmap::Mmap>,
-    _grab: Option<Grabber<'a>>,
+    _grab: Option<Grabber<'a>>, // ungrabs the keys on drop
 }
 
 impl<'a> Controler<'a> {
