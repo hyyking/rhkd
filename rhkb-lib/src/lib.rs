@@ -1,3 +1,5 @@
+#![feature(try_blocks)]
+
 pub mod fddriver;
 pub mod keyboard;
 

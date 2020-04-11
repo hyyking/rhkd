@@ -1,14 +1,3 @@
-pub mod mask {
-    use x11::xlib;
-    pub const ANY: u32 = xlib::AnyModifier;
-    pub const MOD1: u32 = xlib::Mod1Mask;
-    pub const MOD2: u32 = xlib::Mod2Mask;
-    pub const MOD3: u32 = xlib::Mod3Mask;
-    pub const MOD4: u32 = xlib::Mod4Mask;
-    pub const MOD5: u32 = xlib::Mod5Mask;
-    pub const SHIFT: u32 = xlib::ShiftMask;
-}
-
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Key {
     pub mask: u32,
@@ -25,6 +14,72 @@ impl Into<[u8; 12]> for Key {
         ]
     }
 }
-pub fn tryinto_keysym(key: &str) -> Result<u64, std::ffi::NulError> {
-    std::ffi::CString::new(key).map(|cs| unsafe { x11::xlib::XStringToKeysym(cs.as_ptr()) })
+
+use std::str::FromStr;
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+enum Either<A, B> {
+    A(A),
+    B(B),
+}
+
+impl FromStr for Key {
+    type Err = ();
+    fn from_str(input: &str) -> Result<Key, ()> {
+        let mut key = Key { mask: 0, sym: 0 };
+
+        for k in input.split("+") {
+            let k = k.trim();
+            k.to_ascii_lowercase();
+
+            match parse_convert_modifier(k) {
+                Either::A(modifier) => key.mask |= modifier,
+                Either::B(sym) => key.sym |= sym,
+            }
+        }
+        Ok(key)
+    }
+}
+
+#[allow(unreachable_code)]
+fn parse_convert_modifier(k: &str) -> Either<u32, u64> {
+    use x11::xlib;
+    match k {
+        "any" => Either::A(xlib::AnyModifier),
+        "shift" => Either::A(xlib::ShiftMask),
+        "ctrl" | "control" => Either::A(xlib::ControlMask),
+        "lock" => Either::A(xlib::LockMask),
+        "mod1" => Either::A(xlib::Mod1Mask),
+        "mod2" => Either::A(xlib::Mod2Mask),
+        "mod3" => Either::A(xlib::Mod3Mask),
+        "mod4" => Either::A(xlib::Mod4Mask),
+        "mod5" => Either::A(xlib::Mod5Mask),
+        k => Either::B(into_keysym(k).unwrap()),
+    }
+}
+
+pub fn into_keysym(key: &str) -> Result<u64, &'static str> {
+    let cs = std::ffi::CString::new(key).expect("couldn't create new cstring");
+    match unsafe { x11::xlib::XStringToKeysym(cs.as_ptr()) } {
+        0 => Err("Unmatched key"),
+        a => Ok(a),
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use x11::xlib;
+
+    #[test]
+    fn parse() {
+        assert_eq!(parse_convert_modifier("ctrl"), Either::A(xlib::ControlMask))
+    }
+
+    #[test]
+    fn parse_mutliple() {
+        let key = Key::from_str("ctrl + a").unwrap();
+        assert_eq!(key.mask, xlib::ControlMask);
+        assert_eq!(key.sym, into_keysym("a").unwrap());
+    }
 }

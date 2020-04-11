@@ -9,7 +9,7 @@ extern crate structopt;
 mod hotkeys;
 
 use std::{
-    fs::{DirBuilder, File},
+    fs::File,
     io::{self, BufWriter},
     path::{Path, PathBuf},
     task::Poll,
@@ -25,19 +25,17 @@ use rhkb_lib::{
 
 use structopt::StructOpt;
 
-const BASE_DIR: [&str; 3] = [env!("HOME"), ".config", "rhkb"];
-
 fn bind(b: &mut Builder) {
-    use rhkb_lib::keyboard::mask::ANY;
+    // use rhkb_lib::keyboard::into_keysym;
     use std::process::Command;
 
-    b.bind(&[ANY], "u", Command::new("ls"));
+    b.bind("ctrl + shift + u", Command::new("ls"));
 }
 
 fn main() -> io::Result<()> {
     let parsed = Config::from_args();
 
-    let mut log =
+    let _log =
         get_logger(&parsed.log.unwrap_or_else(|| PathBuf::from("/tmp/rhkb.log"))).transpose()?;
 
     let fst = parsed.fst.unwrap_or_else(|| PathBuf::from("/tmp/rhkb.fst"));
