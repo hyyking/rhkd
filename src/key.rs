@@ -1,4 +1,7 @@
-use std::str::FromStr;
+use std::{
+    process::{Command, Stdio},
+    str::FromStr,
+};
 
 pub type Error = ();
 
@@ -7,6 +10,9 @@ enum Either<A, B> {
     A(A),
     B(B),
 }
+
+#[repr(transparent)]
+pub struct Cmd(pub Command);
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Key {
@@ -26,20 +32,41 @@ impl Into<[u8; 12]> for Key {
 }
 
 impl FromStr for Key {
-    type Err = ();
-    fn from_str(input: &str) -> Result<Key, Error> {
+    type Err = Error;
+    fn from_str(input: &str) -> Result<Key, Self::Err> {
         let mut key = Key { mask: 0, sym: 0 };
 
         for k in input.split('+') {
-            let k = k.trim();
-            k.to_ascii_lowercase();
+            // let k = k.trim();
+            // k.to_ascii_lowercase();
 
-            match parse_convert_modifier(k) {
+            match parse_convert_modifier(k.trim()) {
                 Either::A(modifier) => key.mask |= modifier,
                 Either::B(sym) => key.sym |= sym,
             }
         }
         Ok(key)
+    }
+}
+
+impl FromStr for Cmd {
+    type Err = Error;
+
+    fn from_str(cmd: &str) -> Result<Self, Self::Err> {
+        let mut bld = None;
+        for arg in cmd.split(' ') {
+            if bld.is_none() {
+                bld = Some(Command::new(arg));
+            } else {
+                bld.as_mut().ok_or(())?.arg(arg);
+            }
+        }
+        let mut bld = bld.ok_or(())?;
+        bld.stdin(Stdio::null());
+        bld.stderr(Stdio::null());
+        bld.stdout(Stdio::null());
+
+        Ok(Self(bld))
     }
 }
 
@@ -60,10 +87,10 @@ fn parse_convert_modifier(k: &str) -> Either<u32, u64> {
     }
 }
 
-fn into_keysym(key: &str) -> Result<u64, &'static str> {
+fn into_keysym(key: &str) -> Result<u64, String> {
     let cs = std::ffi::CString::new(key).expect("couldn't create new cstring");
     match unsafe { x11::xlib::XStringToKeysym(cs.as_ptr()) } {
-        0 => Err("Unmatched key"),
+        0 => Err(format!("Unmatched key: {}", key)),
         a => Ok(a),
     }
 }

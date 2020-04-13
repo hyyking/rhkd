@@ -6,6 +6,7 @@ extern crate memmap;
 extern crate structopt;
 extern crate x11;
 
+mod binds;
 mod controler;
 mod fddriver;
 mod key;
@@ -18,18 +19,11 @@ use std::{
     task::Poll,
 };
 
+use binds::bind;
 use controler::Builder;
-
 use listener::{Event::KeyPress, Keyboard};
 
 use structopt::StructOpt;
-
-fn bind(b: &mut Builder) {
-    use std::process::Command;
-
-    b.bind("ctrl + shift + b", Command::new("exa"));
-    b.bind("ctrl + shift + u", Command::new("ls"));
-}
 
 fn main() -> io::Result<()> {
     let parsed = Config::from_args();
@@ -40,9 +34,9 @@ fn main() -> io::Result<()> {
     let fst = parsed.fst.unwrap_or_else(|| PathBuf::from("/tmp/rhkb.fst"));
 
     let mut eventstream = Keyboard::new().expect("couldn't connect to X11 server");
-    let mut builder = Builder::new(fst, eventstream.context()?)?;
+    let mut builder = Builder::new(eventstream.context()?);
     bind(&mut builder);
-    let mut ctrl = builder.finish()?;
+    let mut ctrl = builder.finish(&fst)?;
 
     loop {
         match eventstream.poll() {
