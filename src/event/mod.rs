@@ -92,7 +92,7 @@ impl Keyboard {
         let (display, root, driver) = unsafe {
             let display = XOpenDisplay(std::ptr::null());
 
-            display.is_null().then(|| ()).ok_or({
+            (!display.is_null()).then(|| ()).ok_or({
                 io::Error::new(
                     io::ErrorKind::AddrNotAvailable,
                     "unable to access x11 server",
