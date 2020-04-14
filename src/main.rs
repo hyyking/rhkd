@@ -11,29 +11,21 @@ mod controler;
 mod event;
 mod key;
 
-use std::{io, path::PathBuf, task::Poll};
+use std::{
+    io,
+    path::PathBuf,
+    sync::atomic::{AtomicBool, Ordering},
+    task::Poll,
+};
 
 use binds::bind;
 use controler::Builder;
 use event::{signal::SigHandler, Event::KeyPress, Keyboard};
 
-use libc::{c_void, siginfo_t as SigInfo, SIGINT, SIGTERM};
+use libc::{SIGINT, SIGTERM};
 use structopt::StructOpt;
 
-#[no_mangle]
-fn handler(code: i32, _info: SigInfo, __: *mut c_void) {
-    match code {
-        SIGTERM => {
-            dbg!("SIGTERM");
-        }
-        SIGINT => {
-            dbg!("SIGINT");
-        }
-        _ => {
-            dbg!(code);
-        }
-    }
-}
+static RUN: AtomicBool = AtomicBool::new(true);
 
 fn main() -> io::Result<()> {
     let parsed = Config::from_args();
@@ -45,26 +37,21 @@ fn main() -> io::Result<()> {
     bind(&mut builder);
     let mut ctrl = builder.finish(&fst)?;
 
-    // let mut hd = SigHandler::new(handler);
-    let mut hd = SigHandler::new(|code, _, _| match code {
-        SIGTERM => {
-            dbg!("SIGTERM");
+    let hd = SigHandler::new(|code, _, _| {
+        if matches!(code, SIGTERM | SIGINT) {
+            RUN.store(false, Ordering::SeqCst);
         }
-        SIGINT => {
-            dbg!("SIGINT");
-        }
-        _ => unreachable!(),
     });
     hd.register(SIGTERM)?;
     hd.register(SIGINT)?;
 
-    loop {
+    while RUN.load(Ordering::SeqCst) {
         match eventstream.poll() {
             Poll::Ready(KeyPress(key)) => ctrl.execute(key),
-            Poll::Ready(_) => continue,
-            Poll::Pending => {}
+            Poll::Ready(_) | Poll::Pending => continue,
         }
     }
+    Ok(())
 }
 
 #[derive(Debug, StructOpt)]

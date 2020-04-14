@@ -3,7 +3,7 @@ pub mod signal;
 
 use std::{cell::Cell, io, task::Poll};
 
-use self::fd::FdDriver;
+use self::fd::Driver;
 use super::key::Key;
 
 use x11::xlib::{Display, Window, XEvent};
@@ -23,7 +23,7 @@ pub struct Keyboard {
     display: Option<Box<Display>>,
     root: Window,
     event_buff: XEvent,
-    driver: FdDriver,
+    driver: Driver,
 }
 
 pub struct GrabContext<'a> {
@@ -46,17 +46,33 @@ impl<'a> GrabContext<'a> {
     }
 
     #[allow(clippy::cast_possible_truncation)]
-    pub fn grab(&mut self, key: Key) {
-        unsafe {
+    pub fn grab(&mut self, key: Key) -> io::Result<()> {
+        use x11::xlib::{BadAccess as BAD_ACCESS, BadValue as BAD_VALUE, BadWindow as BAD_WINDOW};
+        let code = unsafe {
             x11::xlib::XGrabKey(
                 self.display,
                 i32::from(self.keysym_to_keycode(key.sym)),
                 key.mask,
                 self.window,
-                1,
-                1,
-                1,
-            );
+                i32::from(true),
+                x11::xlib::GrabModeSync,
+                x11::xlib::GrabModeAsync,
+            )
+        };
+        match code as u8 {
+            BAD_ACCESS => Err(io::Error::new(
+                io::ErrorKind::Other,
+                format!("X11 BadAccess {:?}", key),
+            )),
+            BAD_VALUE => Err(io::Error::new(
+                io::ErrorKind::Other,
+                format!("X11 BadValue {:?}", key),
+            )),
+            BAD_WINDOW => Err(io::Error::new(
+                io::ErrorKind::Other,
+                format!("X11 BadWindow {:?}", key),
+            )),
+            _ => Ok(()),
         }
     }
 
@@ -75,13 +91,16 @@ impl Keyboard {
 
         let (display, root, driver) = unsafe {
             let display = XOpenDisplay(std::ptr::null());
-            if display.is_null() {
-                return Err(io::ErrorKind::AddrNotAvailable.into());
-            }
 
-            let screen = XDefaultScreenOfDisplay(display);
-            let root = XRootWindowOfScreen(screen);
-            let driver = FdDriver::new(XConnectionNumber(display));
+            display.is_null().then(|| ()).ok_or({
+                io::Error::new(
+                    io::ErrorKind::AddrNotAvailable,
+                    "unable to access x11 server",
+                )
+            })?;
+
+            let root = XRootWindowOfScreen(XDefaultScreenOfDisplay(display));
+            let driver = Driver::new(XConnectionNumber(display));
 
             (Box::from_raw(display), root, driver)
         };
@@ -94,7 +113,7 @@ impl Keyboard {
         })
     }
     fn get_display(&mut self) -> &mut Display {
-        self.display.as_mut().expect("function call after drop") // always available during execution
+        self.display.as_mut().expect("get_display after drop") // always available during execution
     }
 
     pub fn context<'b>(&mut self) -> io::Result<GrabContext<'b>> {
@@ -152,9 +171,8 @@ impl<'a> Drop for GrabContext<'a> {
     fn drop(&mut self) {
         use x11::xlib::{AnyKey, AnyModifier, XUngrabKey};
         GRABBED.with(|grab| {
-            if !grab.get() {
-                panic!("unexpected GrabContext state")
-            }
+            (!grab.get()).then(|| panic!("unexpected GrabContext state"));
+
             unsafe { XUngrabKey(self.display, AnyKey, AnyModifier, self.window) };
             grab.set(false);
         })

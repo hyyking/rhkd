@@ -1,10 +1,10 @@
 # RHKD
 
-Rust Hotkey Daemon that reads the keyboard event socket
+Rust X11 Hotkey Daemon (builds on nightly as for )
 
+This package is meant to be an alternative to [sxhkd](https://github.com/baskerville/sxhkd).
 
-# Configuring
-
-- Set your log file path in the source code, only the output of the commands will be logged
-- Set your keyboard fd in the source code (you require root access this file)
-- Bind your keys in the bind function (current keycodes are for a french keyboard)
+# Installation and configuration
+1. clone the repository
+2. modify the key bindings and modmap in `src/binds.rs`
+3. install/run with cargo (resp. `cargo install --path .` | `cargo run`)

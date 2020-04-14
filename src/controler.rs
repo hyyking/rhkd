@@ -1,5 +1,5 @@
 use std::{
-    fs::{self, File},
+    fs::File,
     io::{self, BufWriter},
     str::FromStr,
 };
@@ -14,7 +14,7 @@ use fst::{self, Map, MapBuilder};
 pub struct Controler<'a> {
     cmds: Box<[Cmd]>,
     map: Map<memmap::Mmap>,
-    _grab: Option<GrabContext<'a>>, // ungrabs the keys on drop
+    _grab: GrabContext<'a>, // ungrabs the keys on drop
 }
 
 pub struct Builder<'a> {
@@ -31,19 +31,17 @@ impl<'a> Builder<'a> {
             grab,
         }
     }
-    pub fn bind(&mut self, pattern: &str, cmd: &str) -> &mut Self {
-        let key = Key::from_str(pattern).unwrap();
-        let cmd = Cmd::from_str(cmd).unwrap();
+    pub fn bind(&mut self, pattern: &str, cmd: &str) {
+        let key = Key::from_str(pattern).expect("unable to parse Key from str");
+        let cmd = Cmd::from_str(cmd).expect("unbale to parse Cmd from str");
 
-        self.grab.grab(key);
+        self.grab.grab(key).expect("unable to grab key");
         self.commands.push(cmd);
 
         self.binds.push((
             Into::<[u8; 12]>::into(key),
             (self.commands.len() - 1) as u64,
         ));
-
-        self
     }
 
     pub fn finish(mut self, path: &std::path::Path) -> io::Result<Controler<'a>> {
@@ -52,12 +50,10 @@ impl<'a> Builder<'a> {
 
         let cmds = self.commands.into_boxed_slice();
 
-        let _ = fs::remove_file(&path);
-
         let file = File::with_options()
             .read(true)
             .write(true)
-            .create(true)
+            .create_new(true)
             .open(path)?;
 
         let mut b = MapBuilder::new(BufWriter::new(file)).map_err(fsterror_to_io)?;
@@ -75,7 +71,7 @@ impl<'a> Builder<'a> {
         Ok(Controler {
             cmds,
             map,
-            _grab: Some(self.grab),
+            _grab: self.grab,
         })
     }
 }

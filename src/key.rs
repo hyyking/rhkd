@@ -3,6 +3,8 @@ use std::{
     str::FromStr,
 };
 
+use super::binds::xmodmap;
+
 pub type Error = ();
 
 #[repr(transparent)]
@@ -51,12 +53,15 @@ impl FromStr for Cmd {
     type Err = Error;
 
     fn from_str(cmd: &str) -> Result<Self, Self::Err> {
-        let mut bld = None;
+        let mut bld: Option<Command> = None;
+
         for arg in cmd.split(' ') {
-            if bld.is_none() {
-                bld = Some(Command::new(arg));
+            if let Some(b) = bld.as_mut() {
+                b.arg(arg);
             } else {
-                bld.as_mut().ok_or(())?.arg(arg);
+                bld.is_none().then(|| {
+                    bld = Some(Command::new(arg));
+                })
             }
         }
         let mut bld = bld.ok_or(())?;
@@ -75,11 +80,11 @@ fn parse_convert_modifier(k: &str) -> Either<u32, u64> {
         "shift" => Either::A(xlib::ShiftMask),
         "ctrl" | "control" => Either::A(xlib::ControlMask),
         "lock" => Either::A(xlib::LockMask),
-        "mod1" => Either::A(xlib::Mod1Mask),
-        "mod2" => Either::A(xlib::Mod2Mask),
-        "mod3" => Either::A(xlib::Mod3Mask),
-        "mod4" => Either::A(xlib::Mod4Mask),
-        "mod5" => Either::A(xlib::Mod5Mask),
+        "mod1" | xmodmap::MOD1 => Either::A(xlib::Mod1Mask),
+        "mod2" | xmodmap::MOD2 => Either::A(xlib::Mod2Mask),
+        "mod3" | xmodmap::MOD3 => Either::A(xlib::Mod3Mask),
+        "mod4" | xmodmap::MOD4 => Either::A(xlib::Mod4Mask),
+        "mod5" | xmodmap::MOD5 => Either::A(xlib::Mod5Mask),
         k => Either::B(into_keysym(k).unwrap()),
     }
 }

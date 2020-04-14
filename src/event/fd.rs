@@ -2,13 +2,13 @@ use std::{io, mem::MaybeUninit, os::unix::io::RawFd, task::Poll};
 
 use libc::{fd_set as FdSet, timeval as Timeval};
 
-pub struct FdDriver {
+pub struct Driver {
     fd: RawFd,
     set: FdSet,
     timer: Timeval,
 }
 
-impl FdDriver {
+impl Driver {
     pub fn new(fd: RawFd) -> Self {
         // safety: used by reset which is called before any read
         let set = unsafe { MaybeUninit::zeroed().assume_init() };
@@ -64,10 +64,5 @@ fn select(
     let tv = tv.map_or(std::ptr::null_mut(), |r| r as *mut _);
 
     let ret = unsafe { libc::select(fd, rs, ws, es, tv) };
-
-    if ret <= 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(ret)
-    }
+    (ret > 0).then(|| ret).ok_or(io::Error::last_os_error())
 }
