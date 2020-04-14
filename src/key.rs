@@ -61,7 +61,7 @@ impl FromStr for Cmd {
             } else {
                 bld.is_none().then(|| {
                     bld = Some(Command::new(arg));
-                })
+                });
             }
         }
         let mut bld = bld.ok_or(())?;

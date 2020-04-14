@@ -17,6 +17,8 @@ impl SigHandler {
     }
     pub fn register(&self, code: i32) -> std::io::Result<()> {
         let c = unsafe { sigaction(code, &self.inner, std::ptr::null_mut()) };
-        (c == 0).then(|| ()).ok_or(std::io::Error::last_os_error())
+        (c == 0)
+            .then(|| ())
+            .ok_or_else(std::io::Error::last_os_error)
     }
 }

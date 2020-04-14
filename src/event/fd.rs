@@ -64,5 +64,5 @@ fn select(
     let tv = tv.map_or(std::ptr::null_mut(), |r| r as *mut _);
 
     let ret = unsafe { libc::select(fd, rs, ws, es, tv) };
-    (ret > 0).then(|| ret).ok_or(io::Error::last_os_error())
+    (ret > 0).then(|| ret).ok_or_else(io::Error::last_os_error)
 }
