@@ -15,9 +15,25 @@ use std::{io, path::PathBuf, task::Poll};
 
 use binds::bind;
 use controler::Builder;
-use event::{Event::KeyPress, Keyboard};
+use event::{signal::SigHandler, Event::KeyPress, Keyboard};
 
+use libc::{c_void, siginfo_t as SigInfo, SIGINT, SIGTERM};
 use structopt::StructOpt;
+
+#[no_mangle]
+fn handler(code: i32, _info: SigInfo, __: *mut c_void) {
+    match code {
+        SIGTERM => {
+            dbg!("SIGTERM");
+        }
+        SIGINT => {
+            dbg!("SIGINT");
+        }
+        _ => {
+            dbg!(code);
+        }
+    }
+}
 
 fn main() -> io::Result<()> {
     let parsed = Config::from_args();
@@ -28,6 +44,19 @@ fn main() -> io::Result<()> {
     let mut builder = Builder::new(eventstream.context()?);
     bind(&mut builder);
     let mut ctrl = builder.finish(&fst)?;
+
+    // let mut hd = SigHandler::new(handler);
+    let mut hd = SigHandler::new(|code, _, _| match code {
+        SIGTERM => {
+            dbg!("SIGTERM");
+        }
+        SIGINT => {
+            dbg!("SIGINT");
+        }
+        _ => unreachable!(),
+    });
+    hd.register(SIGTERM)?;
+    hd.register(SIGINT)?;
 
     loop {
         match eventstream.poll() {

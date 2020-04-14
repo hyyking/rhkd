@@ -1,4 +1,5 @@
 mod fd;
+pub mod signal;
 
 use std::{cell::Cell, io, task::Poll};
 
