@@ -46,10 +46,10 @@ fn bind_bspc(b: &mut Builder) {
     b.bind("mod4 + ctrl + z", "bspc node -g private");
 
     // focus the node in the given direction
-    b.bind("mod4 + h", "bspc -f west");
-    b.bind("mod4 + j", "bspc -f south");
-    b.bind("mod4 + k", "bspc -f north");
-    b.bind("mod4 + l", "bspc -f east");
+    b.bind("mod4 + h", "bspc node -f west");
+    b.bind("mod4 + j", "bspc node -f south");
+    b.bind("mod4 + k", "bspc node -f north");
+    b.bind("mod4 + l", "bspc node -f east");
     b.bind("mod4 + shift + h", "bspc -s west");
     b.bind("mod4 + shift + j", "bspc -s south");
     b.bind("mod4 + shift + k", "bspc -s north");

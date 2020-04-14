@@ -40,10 +40,8 @@ impl FdDriver {
     fn reset(&mut self) {
         use libc::{FD_SET, FD_ZERO};
 
-        self.timer = Timeval {
-            tv_sec: 1,
-            tv_usec: 0,
-        };
+        self.timer.tv_sec = 1;
+        self.timer.tv_usec = 0;
 
         unsafe {
             FD_ZERO(&mut self.set);

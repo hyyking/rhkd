@@ -1,7 +1,9 @@
+mod fd;
+
 use std::{cell::Cell, io, task::Poll};
 
-use crate::fddriver::FdDriver;
-use crate::key::Key;
+use self::fd::FdDriver;
+use super::key::Key;
 
 use x11::xlib::{Display, Window, XEvent};
 
@@ -70,19 +72,18 @@ impl Keyboard {
             XConnectionNumber, XDefaultScreenOfDisplay, XOpenDisplay, XRootWindowOfScreen,
         };
 
-        let (mut display, root) = unsafe {
+        let (display, root, driver) = unsafe {
             let display = XOpenDisplay(std::ptr::null());
             if display.is_null() {
                 return Err(io::ErrorKind::AddrNotAvailable.into());
             }
-            let mut display = Box::from_raw(display);
-            let screen = XDefaultScreenOfDisplay(&mut *display);
+
+            let screen = XDefaultScreenOfDisplay(display);
             let root = XRootWindowOfScreen(screen);
+            let driver = FdDriver::new(XConnectionNumber(display));
 
-            (display, root)
+            (Box::from_raw(display), root, driver)
         };
-
-        let driver = FdDriver::new(unsafe { XConnectionNumber(&mut *display) });
 
         Ok(Self {
             display: Some(display),
@@ -92,7 +93,7 @@ impl Keyboard {
         })
     }
     fn get_display(&mut self) -> &mut Display {
-        self.display.as_mut().unwrap() // always some during execution
+        self.display.as_mut().expect("function call after drop") // always available during execution
     }
 
     pub fn context<'b>(&mut self) -> io::Result<GrabContext<'b>> {

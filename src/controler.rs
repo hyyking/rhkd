@@ -5,8 +5,8 @@ use std::{
 };
 
 use crate::{
+    event::GrabContext,
     key::{Cmd, Key},
-    listener::GrabContext,
 };
 
 use fst::{self, Map, MapBuilder};

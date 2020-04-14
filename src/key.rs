@@ -5,19 +5,19 @@ use std::{
 
 pub type Error = ();
 
+#[repr(transparent)]
+pub struct Cmd(pub Command);
+
+#[derive(Debug, Clone, Copy)]
+pub struct Key {
+    pub mask: u32,
+    pub sym: u64,
+}
+
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 enum Either<A, B> {
     A(A),
     B(B),
-}
-
-#[repr(transparent)]
-pub struct Cmd(pub Command);
-
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
-pub struct Key {
-    pub mask: u32,
-    pub sym: u64,
 }
 
 impl Into<[u8; 12]> for Key {
@@ -33,13 +33,11 @@ impl Into<[u8; 12]> for Key {
 
 impl FromStr for Key {
     type Err = Error;
+
     fn from_str(input: &str) -> Result<Key, Self::Err> {
         let mut key = Key { mask: 0, sym: 0 };
 
         for k in input.split('+') {
-            // let k = k.trim();
-            // k.to_ascii_lowercase();
-
             match parse_convert_modifier(k.trim()) {
                 Either::A(modifier) => key.mask |= modifier,
                 Either::B(sym) => key.sym |= sym,
@@ -65,7 +63,6 @@ impl FromStr for Cmd {
         bld.stdin(Stdio::null());
         bld.stderr(Stdio::null());
         bld.stdout(Stdio::null());
-
         Ok(Self(bld))
     }
 }

@@ -8,28 +8,19 @@ extern crate x11;
 
 mod binds;
 mod controler;
-mod fddriver;
+mod event;
 mod key;
-mod listener;
 
-use std::{
-    fs::File,
-    io::{self, BufWriter},
-    path::{Path, PathBuf},
-    task::Poll,
-};
+use std::{io, path::PathBuf, task::Poll};
 
 use binds::bind;
 use controler::Builder;
-use listener::{Event::KeyPress, Keyboard};
+use event::{Event::KeyPress, Keyboard};
 
 use structopt::StructOpt;
 
 fn main() -> io::Result<()> {
     let parsed = Config::from_args();
-
-    let _log =
-        get_logger(&parsed.log.unwrap_or_else(|| PathBuf::from("/tmp/rhkb.log"))).transpose()?;
 
     let fst = parsed.fst.unwrap_or_else(|| PathBuf::from("/tmp/rhkb.fst"));
 
@@ -41,34 +32,20 @@ fn main() -> io::Result<()> {
     loop {
         match eventstream.poll() {
             Poll::Ready(KeyPress(key)) => ctrl.execute(key),
-            Poll::Ready(_) | Poll::Pending => {}
-        }
-        if false {
-            break;
+            Poll::Ready(_) => continue,
+            Poll::Pending => {}
         }
     }
-    Ok(())
-}
-
-fn get_logger(log: &Path) -> Option<io::Result<BufWriter<File>>> {
-    if log.as_os_str() == "no" {
-        return None;
-    }
-
-    Some(File::create(log).map(BufWriter::new))
 }
 
 #[derive(Debug, StructOpt)]
-#[structopt(name = "rhkb", about = "Rust Hotkey Daemon")]
+#[structopt(name = "rhkb", about = "Rust X11 Hotkey Daemon")]
 struct Config {
     #[structopt(
         short,
         long,
         parse(from_os_str),
-        help = "directory in which to store the fst"
+        help = "path in which to store the fst, default is /tmp/"
     )]
     fst: Option<PathBuf>,
-
-    #[structopt(long, parse(from_os_str), help = "path of the loging file")]
-    log: Option<PathBuf>,
 }
