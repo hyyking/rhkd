@@ -53,7 +53,7 @@ impl<'a> Builder<'a> {
         let file = File::with_options()
             .read(true)
             .write(true)
-            .create_new(true)
+            .create(true)
             .open(path)?;
 
         let mut b = MapBuilder::new(BufWriter::new(file)).map_err(fsterror_to_io)?;
