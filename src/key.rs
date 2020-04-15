@@ -11,6 +11,7 @@ pub type Error = ();
 pub struct Cmd(pub Command);
 
 #[derive(Debug, Clone, Copy)]
+#[repr(packed)]
 pub struct Key {
     pub mask: u32,
     pub sym: u64,
@@ -24,12 +25,7 @@ enum Either<A, B> {
 
 impl Into<[u8; 12]> for Key {
     fn into(self) -> [u8; 12] {
-        let mask = self.mask.to_ne_bytes();
-        let sym = self.sym.to_ne_bytes();
-        [
-            mask[0], mask[1], mask[2], mask[3], sym[0], sym[1], sym[2], sym[3], sym[4], sym[5],
-            sym[6], sym[7],
-        ]
+        unsafe { std::mem::transmute(self) }
     }
 }
 
