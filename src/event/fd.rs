@@ -58,11 +58,16 @@ fn select(
     es: Option<&mut FdSet>,
     tv: Option<&mut Timeval>,
 ) -> io::Result<i32> {
-    let rs = rs.map_or(std::ptr::null_mut(), |r| r as *mut _);
-    let ws = ws.map_or(std::ptr::null_mut(), |r| r as *mut _);
-    let es = es.map_or(std::ptr::null_mut(), |r| r as *mut _);
-    let tv = tv.map_or(std::ptr::null_mut(), |r| r as *mut _);
+    use std::ptr::null_mut;
+    let rs = rs.map_or_else(null_mut, cast);
+    let ws = ws.map_or_else(null_mut, cast);
+    let es = es.map_or_else(null_mut, cast);
+    let tv = tv.map_or_else(null_mut, cast);
 
     let ret = unsafe { libc::select(fd, rs, ws, es, tv) };
     (ret > 0).then(|| ret).ok_or_else(io::Error::last_os_error)
+}
+
+fn cast<T>(val: &mut T) -> *mut T {
+    val
 }

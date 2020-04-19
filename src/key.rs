@@ -3,8 +3,6 @@ use std::{
     str::FromStr,
 };
 
-use super::binds::xmodmap;
-
 pub type Error = ();
 
 #[repr(transparent)]
@@ -38,7 +36,7 @@ impl FromStr for Key {
         for k in input.split('+') {
             match parse_convert_modifier(k.trim()) {
                 Either::A(modifier) => key.mask |= modifier,
-                Either::B(sym) => key.sym |= sym,
+                Either::B(sym) => key.sym = sym,
             }
         }
         Ok(key)
@@ -70,6 +68,7 @@ impl FromStr for Cmd {
 
 #[allow(unreachable_code)]
 fn parse_convert_modifier(k: &str) -> Either<u32, u64> {
+    use super::binds::xmodmap;
     use x11::xlib;
     match k {
         "any" => Either::A(xlib::AnyModifier),

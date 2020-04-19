@@ -9,11 +9,11 @@ type Handler = fn(i32, SigInfo, *mut c_void);
 
 impl SigHandler {
     pub fn new(f: Handler) -> Self {
-        let mut sa: SigAction = unsafe { MaybeUninit::zeroed().assume_init() };
-        sa.sa_flags = SA_SIGINFO;
-        sa.sa_sigaction = f as usize;
+        let mut inner: SigAction = unsafe { MaybeUninit::zeroed().assume_init() };
+        inner.sa_flags = SA_SIGINFO;
+        inner.sa_sigaction = f as usize;
 
-        Self { inner: sa }
+        Self { inner }
     }
     pub fn register(&self, code: i32) -> std::io::Result<()> {
         let c = unsafe { sigaction(code, &self.inner, std::ptr::null_mut()) };

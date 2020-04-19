@@ -113,7 +113,7 @@ impl Keyboard {
         })
     }
     fn get_display(&mut self) -> &mut Display {
-        self.display.as_mut().expect("get_display after drop") // always available during execution
+        self.display.as_mut().expect("get_display after drop")
     }
 
     pub fn context<'b>(&mut self) -> io::Result<GrabContext<'b>> {
@@ -126,7 +126,7 @@ impl Keyboard {
         if unsafe { XPending(self.get_display()) } == 0 {
             match self.driver.poll_read() {
                 Poll::Ready(Ok(_)) => {}
-                Poll::Pending | Poll::Ready(Err(_)) => return Poll::Pending,
+                _ => return Poll::Pending,
             }
         }
         self.read_event();
