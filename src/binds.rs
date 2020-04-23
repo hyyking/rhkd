@@ -3,7 +3,7 @@ use super::controler::Builder;
 // aliases for mod[1-5]
 pub mod xmodmap {
     pub const MOD1: &str = "alt";
-    pub const MOD2: &str = "_mod2";
+    pub const MOD2: &str = "Num_Lock";
     pub const MOD3: &str = "_mod3";
     pub const MOD4: &str = "super";
     pub const MOD5: &str = "_mod5";

@@ -45,13 +45,16 @@ impl<'a> GrabContext<'a> {
         })
     }
 
-    #[allow(clippy::cast_possible_truncation)]
-    pub fn grab(&mut self, key: Key) -> io::Result<()> {
-        use x11::xlib::{BadAccess as BAD_ACCESS, BadValue as BAD_VALUE, BadWindow as BAD_WINDOW};
-        let code = unsafe {
-            x11::xlib::XGrabKey(
+    pub fn grab_key(&mut self, key: Key) -> io::Result<()> {
+        use x11::xlib::{BadAccess, BadValue, BadWindow, XGrabKey, XKeysymToKeycode};
+        const BAD_ACCESS: i32 = BadAccess as i32;
+        const BAD_VALUE: i32 = BadValue as i32;
+        const BAD_WINDOW: i32 = BadWindow as i32;
+        let err = unsafe {
+            let code = XKeysymToKeycode(self.display, key.sym);
+            XGrabKey(
                 self.display,
-                i32::from(self.keysym_to_keycode(key.sym)),
+                i32::from(code),
                 key.mask,
                 self.window,
                 i32::from(true),
@@ -59,25 +62,21 @@ impl<'a> GrabContext<'a> {
                 x11::xlib::GrabModeAsync,
             )
         };
-        match code as u8 {
+        match err {
             BAD_ACCESS => Err(io::Error::new(
                 io::ErrorKind::Other,
-                format!("X11 BadAccess {:?}", key),
+                format!("X11 BadAccess: {:?}", key),
             )),
             BAD_VALUE => Err(io::Error::new(
                 io::ErrorKind::Other,
-                format!("X11 BadValue {:?}", key),
+                format!("X11 BadValue: {:?}", key),
             )),
             BAD_WINDOW => Err(io::Error::new(
                 io::ErrorKind::Other,
-                format!("X11 BadWindow {:?}", key),
+                format!("X11 BadWindow: {:?}", key),
             )),
             _ => Ok(()),
         }
-    }
-
-    unsafe fn keysym_to_keycode(&mut self, sym: u64) -> u8 {
-        x11::xlib::XKeysymToKeycode(self.display, sym)
     }
 }
 

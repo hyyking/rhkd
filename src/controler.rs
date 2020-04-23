@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     event::GrabContext,
-    key::{Cmd, Key},
+    key::{Cmd, Key, Locks},
 };
 
 use fst::{self, Map, MapBuilder};
@@ -20,6 +20,7 @@ pub struct Controler<'a> {
 pub struct Builder<'a> {
     commands: Vec<Cmd>,
     binds: Vec<([u8; 12], u64)>,
+    locks: Locks,
     grab: GrabContext<'a>,
 }
 
@@ -28,20 +29,42 @@ impl<'a> Builder<'a> {
         Self {
             commands: Vec::new(),
             binds: Vec::new(),
+            locks: Locks::new(),
             grab,
         }
     }
     pub fn bind(&mut self, pattern: &str, cmd: &str) {
         let key = Key::from_str(pattern).expect("unable to parse Key from str");
         let cmd = Cmd::from_str(cmd).expect("unbale to parse Cmd from str");
+        let Locks { num, caps } = self.locks;
 
-        self.grab.grab(key).expect("unable to grab key");
+        let numlocked = {
+            let mut key = key;
+            key.mask |= num.unwrap_or(0);
+            key
+        };
+        let capslocked = {
+            let mut key = key;
+            key.mask |= caps.unwrap_or(x11::xlib::LockMask);
+            key
+        };
+        let all_locked = {
+            let mut key = key;
+            key.mask |= caps.unwrap_or(x11::xlib::LockMask) | num.unwrap_or(0);
+            key
+        };
+
+        self.grab.grab_key(key).expect("unable to grab key");
+        self.grab.grab_key(numlocked).expect("unable to grab key");
+        self.grab.grab_key(capslocked).expect("unable to grab key");
+        self.grab.grab_key(all_locked).expect("unable to grab key");
+
+        let idx = self.commands.len() as u64;
         self.commands.push(cmd);
-
-        self.binds.push((
-            Into::<[u8; 12]>::into(key),
-            (self.commands.len() - 1) as u64,
-        ));
+        self.binds.push((key.into(), idx));
+        self.binds.push((numlocked.into(), idx));
+        self.binds.push((capslocked.into(), idx));
+        self.binds.push((all_locked.into(), idx));
     }
 
     pub fn finish(mut self, path: &std::path::Path) -> io::Result<Controler<'a>> {
