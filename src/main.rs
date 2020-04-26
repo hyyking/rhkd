@@ -1,4 +1,4 @@
-#![feature(bool_to_option, with_options)]
+#![feature(bool_to_option, with_options, never_type)]
 
 extern crate fst;
 extern crate libc;
@@ -29,8 +29,8 @@ const HELP: &str = "Rust X11 Hotkey Daemon
 
 static RUN: AtomicBool = AtomicBool::new(true);
 
-fn exit(mut lock: io::StdoutLock) -> ! {
-    lock.write(HELP.as_bytes()).unwrap();
+fn exit(mut lock: io::StdoutLock) -> io::Result<!> {
+    lock.write(HELP.as_bytes())?;
     std::process::exit(1)
 }
 
@@ -48,26 +48,25 @@ fn main() -> io::Result<()> {
                 outlock.write(HELP.as_bytes())?;
                 return Ok(());
             } else {
-                exit(outlock)
+                exit(outlock)?
             }
         }
         a if a % 2 == 0 => {
             for _ in (0..a).step_by(2) {
-                if let Some("--fst") = args.next().as_deref() {
-                    fst = args.next();
-                } else {
-                    exit(outlock)
+                match args.next().as_deref() {
+                    Some("--fst") => fst = args.next(),
+                    Some(_) | None => exit(outlock)?,
                 }
             }
         }
-        _ => exit(outlock),
+        _ => exit(outlock)?,
     }
 
     let mut eventstream = Keyboard::new().expect("couldn't connect to X11 server");
 
     let mut builder = Builder::new(eventstream.context()?);
     bind(&mut builder);
-    let mut ctrl = builder.finish(fst.unwrap_or_else(|| "/tmp/rhkb.fst".into()).as_str())?;
+    let mut ctrl = builder.finish(fst.as_deref().unwrap_or("/tmp/rhkb.fst"))?;
 
     let hd = SigHandler::new(|code, _, _| {
         if matches!(code, SIGTERM | SIGINT) {
