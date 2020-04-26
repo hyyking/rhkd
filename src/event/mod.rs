@@ -1,7 +1,7 @@
 mod fd;
 pub mod signal;
 
-use std::{cell::Cell, io, task::Poll};
+use std::{cell::Cell, io, marker::PhantomData, ptr::NonNull, task::Poll};
 
 use self::fd::Driver;
 use super::key::Key;
@@ -20,27 +20,29 @@ pub enum Event {
 }
 
 pub struct Keyboard {
-    display: Option<Box<Display>>,
+    display: NonNull<Display>,
     root: Window,
     event_buff: XEvent,
     driver: Driver,
 }
 
 pub struct GrabContext<'a> {
-    display: &'a mut Display,
+    display: NonNull<Display>,
     window: u64,
+    _m: PhantomData<&'a Display>,
 }
 
 impl<'a> GrabContext<'a> {
-    fn new(display: *mut Display, window: u64) -> io::Result<Self> {
+    fn new(display: NonNull<Display>, window: u64) -> io::Result<Self> {
         GRABBED.with(|grab| {
             if grab.get() {
                 return Err(io::ErrorKind::AlreadyExists.into());
             }
             grab.set(true);
             Ok(Self {
-                display: unsafe { &mut *display },
+                display,
                 window,
+                _m: PhantomData,
             })
         })
     }
@@ -51,9 +53,9 @@ impl<'a> GrabContext<'a> {
         const BAD_VALUE: i32 = BadValue as i32;
         const BAD_WINDOW: i32 = BadWindow as i32;
         let err = unsafe {
-            let code = XKeysymToKeycode(self.display, key.sym);
+            let code = XKeysymToKeycode(self.display.as_ptr(), key.sym);
             XGrabKey(
-                self.display,
+                self.display.as_ptr(),
                 i32::from(code),
                 key.mask,
                 self.window,
@@ -89,40 +91,35 @@ impl Keyboard {
         };
 
         let (display, root, driver) = unsafe {
-            let display = XOpenDisplay(std::ptr::null());
-
-            (!display.is_null()).then(|| ()).ok_or({
+            let display = NonNull::new(XOpenDisplay(std::ptr::null())).ok_or({
                 io::Error::new(
                     io::ErrorKind::AddrNotAvailable,
                     "unable to access x11 server",
                 )
             })?;
 
-            let root = XRootWindowOfScreen(XDefaultScreenOfDisplay(display));
-            let driver = Driver::new(XConnectionNumber(display));
+            let root = XRootWindowOfScreen(XDefaultScreenOfDisplay(display.as_ptr()));
+            let driver = Driver::new(XConnectionNumber(display.as_ptr()));
 
-            (Box::from_raw(display), root, driver)
+            (display, root, driver)
         };
 
         Ok(Self {
-            display: Some(display),
+            display,
             root,
             driver,
             event_buff: XEvent { pad: [0; 24] },
         })
     }
-    fn get_display(&mut self) -> &mut Display {
-        self.display.as_mut().expect("get_display after drop")
-    }
 
     pub fn context<'b>(&mut self) -> io::Result<GrabContext<'b>> {
-        GrabContext::new(self.get_display() as *mut _, self.root)
+        GrabContext::new(self.display, self.root)
     }
 
     pub fn poll(&mut self) -> Poll<Event> {
         use x11::xlib::XPending;
 
-        if unsafe { XPending(self.get_display()) } == 0 {
+        if unsafe { XPending(self.display.as_ptr()) } == 0 {
             match self.driver.poll_read() {
                 Poll::Ready(Ok(_)) => {}
                 _ => return Poll::Pending,
@@ -133,7 +130,7 @@ impl Keyboard {
     }
 
     fn read_event(&mut self) {
-        unsafe { x11::xlib::XNextEvent(self.get_display(), &mut self.event_buff) };
+        unsafe { x11::xlib::XNextEvent(self.display.as_ptr(), &mut self.event_buff) };
     }
     fn decode_event(&mut self) -> Event {
         use x11::xlib::{
@@ -162,7 +159,7 @@ impl Keyboard {
 
     #[allow(clippy::cast_possible_truncation)]
     unsafe fn keycode_to_keysym(&mut self, code: u32) -> u64 {
-        x11::xlib::XKeycodeToKeysym(self.get_display(), code as u8, 0)
+        x11::xlib::XKeycodeToKeysym(self.display.as_ptr(), code as u8, 0)
     }
 }
 
@@ -172,7 +169,7 @@ impl<'a> Drop for GrabContext<'a> {
         GRABBED.with(|grab| {
             (!grab.get()).then(|| panic!("unexpected GrabContext state"));
 
-            unsafe { XUngrabKey(self.display, AnyKey, AnyModifier, self.window) };
+            unsafe { XUngrabKey(self.display.as_ptr(), AnyKey, AnyModifier, self.window) };
             grab.set(false);
         })
     }
@@ -182,6 +179,6 @@ impl Drop for Keyboard {
     fn drop(&mut self) {
         use x11::xlib::XCloseDisplay;
         assert!(!GRABBED.with(Cell::get));
-        unsafe { XCloseDisplay(Box::into_raw(self.display.take().unwrap())) };
+        unsafe { XCloseDisplay(self.display.as_ptr()) };
     }
 }
