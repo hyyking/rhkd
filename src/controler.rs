@@ -67,7 +67,7 @@ impl<'a> Builder<'a> {
         self.binds.push((all_locked.into(), idx));
     }
 
-    pub fn finish(mut self, path: &std::path::Path) -> io::Result<Controler<'a>> {
+    pub fn finish<T: AsRef<std::path::Path>>(mut self, path: T) -> io::Result<Controler<'a>> {
         self.commands.shrink_to_fit();
         self.binds.sort_unstable_by_key(|k| k.0);
 
