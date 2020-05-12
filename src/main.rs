@@ -11,8 +11,7 @@ mod event;
 mod key;
 
 use std::{
-    env,
-    io::{self, Write},
+    env, io,
     sync::atomic::{AtomicBool, Ordering},
     task::Poll,
 };
@@ -25,48 +24,55 @@ use libc::{SIGINT, SIGTERM};
 
 const HELP: &str = "Rust X11 Hotkey Daemon
     --help          help string
-    --fst <ARG>     Path in which to store the fst";
+    --fst <PATH>     Path in which to store the fst";
 
-static RUN: AtomicBool = AtomicBool::new(true);
-
-fn exit(mut lock: io::StdoutLock) -> io::Result<!> {
-    lock.write(HELP.as_bytes())?;
+fn exit() -> ! {
+    println!("{}", HELP);
     std::process::exit(1)
 }
 
-fn main() -> io::Result<()> {
-    let stdout = io::stdout();
-    let mut outlock = io::Stdout::lock(&stdout);
+#[derive(Default)]
+struct Args {
+    fst: Option<String>,
+}
 
-    let mut fst = None;
+fn argparse() -> Args {
     let mut args = env::args().skip(1);
+    let mut output = Args::default();
 
     match args.len() {
         0 => {}
         1 => {
             if let Some("--help") = args.next().as_deref() {
-                outlock.write(HELP.as_bytes())?;
-                return Ok(());
+                println!("{}", HELP);
+                std::process::exit(0)
             } else {
-                exit(outlock)?
+                exit()
             }
         }
         a if a % 2 == 0 => {
             for _ in (0..a).step_by(2) {
                 match args.next().as_deref() {
-                    Some("--fst") => fst = args.next(),
-                    Some(_) | None => exit(outlock)?,
+                    Some("--fst") => output.fst = args.next(),
+                    Some(_) | None => exit(),
                 }
             }
         }
-        _ => exit(outlock)?,
+        _ => exit(),
     }
+    output
+}
+
+static RUN: AtomicBool = AtomicBool::new(true);
+
+fn main() -> io::Result<()> {
+    let args = argparse();
 
     let mut eventstream = Keyboard::new().expect("couldn't connect to X11 server");
-
     let mut builder = Builder::new(eventstream.context()?);
     bind(&mut builder);
-    let mut ctrl = builder.finish(fst.as_deref().unwrap_or("/tmp/rhkb.fst"))?;
+
+    let mut ctrl = builder.finish(args.fst.as_deref().unwrap_or("/tmp/rhkb.fst"))?;
 
     let hd = SigHandler::new(|code, _, _| {
         if matches!(code, SIGTERM | SIGINT) {
