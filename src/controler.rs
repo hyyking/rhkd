@@ -106,7 +106,12 @@ impl<'a> Controler<'a> {
             if index > usize::max_value().try_into().unwrap() {
                 return;
             }
-            let _ = self.cmds[index as usize].0.spawn();
+            let command = &mut self.cmds[index as usize].0;
+            if let Ok(mut child) = command.spawn() {
+                let _ = child.wait();
+            } else {
+                eprintln!("command {:?} didn't start", &command);
+            }
         }
     }
 }
