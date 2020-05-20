@@ -103,14 +103,15 @@ impl<'a> Controler<'a> {
     pub fn execute(&mut self, key: Key) {
         use std::convert::TryInto;
         if let Some(index) = self.map.get::<[u8; 12]>(key.into()) {
-            if index > usize::max_value().try_into().unwrap() {
+            if usize::max_value()
+                .try_into()
+                .map(|v| index > v)
+                .unwrap_or(true)
+            {
                 return;
             }
-            let command = &mut self.cmds[index as usize].0;
-            if let Ok(mut child) = command.spawn() {
-                let _ = child.wait();
-            } else {
-                eprintln!("command {:?} didn't start", &command);
+            if let Err(err) = self.cmds[index as usize].0.spawn() {
+                eprintln!("command failed to spawn {:?}", err);
             }
         }
     }

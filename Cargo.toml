@@ -8,3 +8,4 @@ x11 = {version = "^2.18", features=["xlib"]}
 libc = {version = "^0.2"}
 fst = {version = "^0.4"}
 memmap = {version = "^0.7"}
+zombie = {version = "^0.0.4"}

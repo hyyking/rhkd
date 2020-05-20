@@ -4,6 +4,7 @@ extern crate fst;
 extern crate libc;
 extern crate memmap;
 extern crate x11;
+extern crate zombie;
 
 mod binds;
 mod controler;
@@ -27,7 +28,7 @@ const HELP: &str = "Rust X11 Hotkey Daemon
     --fst <PATH>     Path in which to store the fst";
 
 fn exit() -> ! {
-    println!("{}", HELP);
+    eprintln!("{}", HELP);
     std::process::exit(1)
 }
 
@@ -84,6 +85,7 @@ fn main() -> io::Result<()> {
 
     while RUN.load(Ordering::SeqCst) {
         if let Poll::Ready(KeyPress(key)) = eventstream.poll() {
+            zombie::collect_zombies();
             ctrl.execute(key)
         }
     }
