@@ -8,22 +8,42 @@ pub type Error = ();
 #[repr(transparent)]
 pub struct Cmd(pub Command);
 
-#[derive(Debug, Clone, Copy)]
-#[repr(packed)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+#[repr(C)]
 pub struct Key {
-    pub mask: u32,
     pub sym: u64,
+    pub mask: u32,
 }
+impl Key {
+    pub const fn mask(mask: u32) -> Self {
+        const SYM: u64 = u64::MAX;
+        Self { sym: SYM, mask }
+    }
+    pub const fn sym(sym: u64) -> Self {
+        Self { sym, mask: 0 }
+    }
+    pub const fn builder() -> Self {
+        Self::mask(0)
+    }
+
+    pub fn merge(mut self, other: Self) -> Self {
+        if self.sym == u64::MAX {
+            self.sym = other.sym
+        }
+        self.mask |= other.mask;
+        self
+    }
+}
+impl Into<[u8; 16]> for Key {
+    fn into(self) -> [u8; 16] {
+        unsafe { std::mem::transmute(self) }
+    }
+}
+
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct Locks {
     pub num: Option<u32>,
     pub caps: Option<u32>,
-}
-
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-enum Either<A, B> {
-    A(A),
-    B(B),
 }
 
 impl Locks {
@@ -52,20 +72,20 @@ impl Locks {
 }
 
 #[allow(unreachable_code)]
-fn parse_convert_modifier(k: &str) -> Either<u32, u64> {
+fn parse_convert_modifier(k: &str) -> Result<Key, String> {
     use super::binds::xmodmap;
     use x11::xlib;
     match k {
-        "any" => Either::A(xlib::AnyModifier),
-        "shift" => Either::A(xlib::ShiftMask),
-        "ctrl" | "control" => Either::A(xlib::ControlMask),
-        "lock" => Either::A(xlib::LockMask),
-        "mod1" | xmodmap::MOD1 => Either::A(xlib::Mod1Mask),
-        "mod2" | xmodmap::MOD2 => Either::A(xlib::Mod2Mask),
-        "mod3" | xmodmap::MOD3 => Either::A(xlib::Mod3Mask),
-        "mod4" | xmodmap::MOD4 => Either::A(xlib::Mod4Mask),
-        "mod5" | xmodmap::MOD5 => Either::A(xlib::Mod5Mask),
-        k => Either::B(into_keysym(k).unwrap()),
+        "any" => Ok(Key::mask(xlib::AnyModifier)),
+        "shift" => Ok(Key::mask(xlib::ShiftMask)),
+        "ctrl" | "control" => Ok(Key::mask(xlib::ControlMask)),
+        "lock" => Ok(Key::mask(xlib::LockMask)),
+        "mod1" | xmodmap::MOD1 => Ok(Key::mask(xlib::Mod1Mask)),
+        "mod2" | xmodmap::MOD2 => Ok(Key::mask(xlib::Mod2Mask)),
+        "mod3" | xmodmap::MOD3 => Ok(Key::mask(xlib::Mod3Mask)),
+        "mod4" | xmodmap::MOD4 => Ok(Key::mask(xlib::Mod4Mask)),
+        "mod5" | xmodmap::MOD5 => Ok(Key::mask(xlib::Mod5Mask)),
+        sym => into_keysym(sym).map(Key::sym),
     }
 }
 
@@ -77,23 +97,14 @@ fn into_keysym(key: &str) -> Result<u64, String> {
     }
 }
 
-impl Into<[u8; 12]> for Key {
-    fn into(self) -> [u8; 12] {
-        unsafe { std::mem::transmute(self) }
-    }
-}
-
 impl FromStr for Key {
     type Err = Error;
 
     fn from_str(input: &str) -> Result<Key, Self::Err> {
-        let mut key = Key { mask: 0, sym: 0 };
+        let mut key = Key::builder();
 
         for k in input.split('+') {
-            match parse_convert_modifier(k.trim()) {
-                Either::A(modifier) => key.mask |= modifier,
-                Either::B(sym) => key.sym = sym,
-            }
+            key = key.merge(parse_convert_modifier(k.trim()).map_err(|_| ())?);
         }
         Ok(key)
     }
@@ -101,20 +112,10 @@ impl FromStr for Key {
 
 impl FromStr for Cmd {
     type Err = Error;
-
     fn from_str(cmd: &str) -> Result<Self, Self::Err> {
-        let mut bld: Option<Command> = None;
-
-        for arg in cmd.split(' ') {
-            if let Some(b) = bld.as_mut() {
-                b.arg(arg);
-            } else {
-                bld.is_none().then(|| {
-                    bld = Some(Command::new(arg));
-                });
-            }
-        }
-        let mut bld = bld.ok_or(())?;
+        let mut args = cmd.split(' ');
+        let mut bld: Command = Command::new(args.next().ok_or(())?);
+        bld.args(args);
         bld.stdin(Stdio::null());
         bld.stderr(Stdio::null());
         bld.stdout(Stdio::null());
@@ -129,7 +130,10 @@ mod test {
 
     #[test]
     fn parse() {
-        assert_eq!(parse_convert_modifier("ctrl"), Either::A(xlib::ControlMask))
+        assert_eq!(
+            parse_convert_modifier("ctrl").unwrap(),
+            Key::mask(xlib::ControlMask)
+        )
     }
 
     #[test]

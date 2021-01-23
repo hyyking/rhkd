@@ -15,9 +15,8 @@ pub fn bind(b: &mut Builder) {
 }
 
 fn bind_custom(b: &mut Builder) {
-    b.bind("super + a", "/home/hyyking/.xmonad/scripts/browser.sh");
+    b.bind("super + a", "firefox-developer-edition");
     b.bind("super + e", "alacritty");
-    b.bind("super + z", "pcmanfm");
     b.bind("super + q", "dmenu_run");
 }
 
@@ -132,7 +131,7 @@ fn bind_bspc(b: &mut Builder) {
     b.bind("super + Up", "bspc node -v 0 -20");
     b.bind("super + Right", "bspc node -v 20 0");
 
-    // ################################### UNBOUNDED ###################################
+    // ################################### UNBOUND ###################################
     // # focus the older or newer node in the focus history
     // super + {o,i}
     //         bspc wm -h off; \

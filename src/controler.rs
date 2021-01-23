@@ -1,63 +1,53 @@
 use std::{
-    fs::File,
+    fs::OpenOptions,
     io::{self, BufWriter},
     str::FromStr,
 };
 
 use crate::{
-    event::GrabContext,
-    key::{Cmd, Key, Locks},
+    key::{self, Cmd, Key, Locks},
+    keyboard::Keyboard,
 };
 
 use fst::{self, Map, MapBuilder};
 
-pub struct Controler<'a> {
+pub struct Controler {
     cmds: Box<[Cmd]>,
     map: Map<memmap::Mmap>,
-    _grab: GrabContext<'a>, // ungrabs the keys on drop
 }
 
-pub struct Builder<'a> {
+pub struct Builder<'a, 'kb> {
     commands: Vec<Cmd>,
-    binds: Vec<([u8; 12], u64)>,
+    binds: Vec<([u8; 16], u64)>,
     locks: Locks,
-    grab: GrabContext<'a>,
+    keyboard: &'a mut Keyboard<'kb>,
 }
 
-impl<'a> Builder<'a> {
-    pub fn new(grab: GrabContext<'a>) -> Self {
+impl<'a, 'kb> Builder<'a, 'kb> {
+    pub fn new(keyboard: &'a mut Keyboard<'kb>) -> Self {
         Self {
             commands: Vec::new(),
             binds: Vec::new(),
             locks: Locks::new(),
-            grab,
+            keyboard,
         }
     }
     pub fn bind(&mut self, pattern: &str, cmd: &str) {
-        let key = Key::from_str(pattern).expect("unable to parse Key from str");
-        let cmd = Cmd::from_str(cmd).expect("unbale to parse Cmd from str");
+        self.try_bind(pattern, cmd).expect("Unable to bind key");
+    }
+    pub fn try_bind(&mut self, pattern: &str, cmd: &str) -> Result<(), key::Error> {
+        let key = Key::from_str(pattern)?;
+        let cmd = Cmd::from_str(cmd)?;
         let Locks { num, caps } = self.locks;
 
-        let numlocked = {
-            let mut key = key;
-            key.mask |= num.unwrap_or(0);
-            key
-        };
-        let capslocked = {
-            let mut key = key;
-            key.mask |= caps.unwrap_or(x11::xlib::LockMask);
-            key
-        };
-        let all_locked = {
-            let mut key = key;
-            key.mask |= caps.unwrap_or(x11::xlib::LockMask) | num.unwrap_or(0);
-            key
-        };
+        let numlocked = key.merge(Key::mask(num.unwrap_or(0)));
+        let capslocked = key.merge(Key::mask(caps.unwrap_or(x11::xlib::LockMask)));
+        let all_locked = numlocked.merge(capslocked);
 
-        self.grab.grab_key(key).expect("unable to grab key");
-        self.grab.grab_key(numlocked).expect("unable to grab key");
-        self.grab.grab_key(capslocked).expect("unable to grab key");
-        self.grab.grab_key(all_locked).expect("unable to grab key");
+        self.keyboard.grab_key(key).map_err(|_| ())?;
+        self.keyboard.grab_key(numlocked).map_err(|_| ())?;
+        self.keyboard.grab_key(capslocked).map_err(|_| ())?;
+        self.keyboard.grab_key(all_locked).map_err(|_| ())?;
 
         let idx = self.commands.len() as u64;
         self.commands.push(cmd);
@@ -65,18 +55,20 @@ impl<'a> Builder<'a> {
         self.binds.push((numlocked.into(), idx));
         self.binds.push((capslocked.into(), idx));
         self.binds.push((all_locked.into(), idx));
+        Ok(())
     }
 
-    pub fn finish<T: AsRef<std::path::Path>>(mut self, path: T) -> io::Result<Controler<'a>> {
+    pub fn finish<T: AsRef<std::path::Path>>(mut self, path: T) -> io::Result<Controler> {
         self.commands.shrink_to_fit();
         self.binds.sort_unstable_by_key(|k| k.0);
 
         let cmds = self.commands.into_boxed_slice();
 
-        let file = File::with_options()
+        let file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
+            .truncate(true)
             .open(path)?;
 
         let mut b = MapBuilder::new(BufWriter::new(file)).map_err(fsterror_to_io)?;
@@ -91,18 +83,14 @@ impl<'a> Builder<'a> {
             .expect("issue with the inner bufwriter");
 
         let map = Map::new(unsafe { memmap::Mmap::map(&file)? }).map_err(fsterror_to_io)?;
-        Ok(Controler {
-            cmds,
-            map,
-            _grab: self.grab,
-        })
+        Ok(Controler { cmds, map })
     }
 }
 
-impl<'a> Controler<'a> {
+impl Controler {
     pub fn execute(&mut self, key: Key) {
         use std::convert::TryInto;
-        if let Some(index) = self.map.get::<[u8; 12]>(key.into()) {
+        if let Some(index) = self.map.get::<[u8; 16]>(key.into()) {
             if usize::max_value()
                 .try_into()
                 .map(|v| index > v)

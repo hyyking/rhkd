@@ -1,11 +1,13 @@
 [package]
-name = "rhkb"
+name = "rhkd"
 version = "1.0.0"
 authors = ["Léo Duret <leoduret@outlook.com>"]
 
 [dependencies]
 x11 = {version = "^2.18", features=["xlib"]}
-libc = {version = "^0.2"}
 fst = {version = "^0.4"}
 memmap = {version = "^0.7"}
 zombie = {version = "^0.0.4"}
+signal-hook = {version= "^0.3"}
+signal-hook-mio = {version= "^0.2", features=["support-v0_7"]}
+mio = {version="^0.7", features=["os-poll", "os-ext"]}

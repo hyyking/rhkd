@@ -1,31 +1,27 @@
-#![feature(bool_to_option, with_options, never_type)]
-
 extern crate fst;
-extern crate libc;
-extern crate memmap;
+extern crate mio;
+extern crate signal_hook;
+extern crate signal_hook_mio;
 extern crate x11;
-extern crate zombie;
 
 mod binds;
 mod controler;
-mod event;
 mod key;
+mod keyboard;
 
-use std::{
-    env, io,
-    sync::atomic::{AtomicBool, Ordering},
-    task::Poll,
-};
+use std::{env, io};
 
 use binds::bind;
 use controler::Builder;
-use event::{signal::SigHandler, Event::KeyPress, Keyboard};
+use keyboard::{DisplayContext, Event, Keyboard};
 
-use libc::{SIGINT, SIGTERM};
+use mio::{Events, Interest, Poll, Token};
+use signal_hook::consts::signal::*;
+use signal_hook_mio::v0_7::Signals;
 
 const HELP: &str = "Rust X11 Hotkey Daemon
-    --help          help string
-    --fst <PATH>     Path in which to store the fst";
+    --help          Help string
+    --fst <PATH>    Path in which to store the fst";
 
 fn exit() -> ! {
     eprintln!("{}", HELP);
@@ -64,30 +60,52 @@ fn argparse() -> Args {
     output
 }
 
-static RUN: AtomicBool = AtomicBool::new(true);
+const SIGNAL: Token = Token(0);
+const KEYBOARD: Token = Token(1);
 
 fn main() -> io::Result<()> {
+    let mut poll = Poll::new()?;
     let args = argparse();
 
-    let mut eventstream = Keyboard::new().expect("couldn't connect to X11 server");
-    let mut builder = Builder::new(eventstream.context()?);
-    bind(&mut builder);
+    let mut context = DisplayContext::current()?;
+    let mut keyboard = Keyboard::new(&mut context);
 
+    let mut builder = Builder::new(&mut keyboard);
+    bind(&mut builder);
     let mut ctrl = builder.finish(args.fst.as_deref().unwrap_or("/tmp/rhkb.fst"))?;
 
-    let hd = SigHandler::new(|code, _, _| {
-        if matches!(code, SIGTERM | SIGINT) {
-            RUN.store(false, Ordering::SeqCst);
-        }
-    });
-    hd.register(SIGTERM)?;
-    hd.register(SIGINT)?;
+    let mut signals = Signals::new(&[SIGTERM, SIGINT])?;
+    {
+        let registry = poll.registry();
+        registry.register(&mut signals, SIGNAL, Interest::READABLE)?;
+        registry.register(
+            &mut keyboard,
+            KEYBOARD,
+            Interest::READABLE | Interest::WRITABLE,
+        )?;
+    }
 
-    while RUN.load(Ordering::SeqCst) {
-        if let Poll::Ready(KeyPress(key)) = eventstream.poll() {
-            zombie::collect_zombies();
-            ctrl.execute(key)
+    let mut events = Events::with_capacity(8);
+    loop {
+        match poll.poll(&mut events, None) {
+            Ok(_) => {}
+            Err(a) if a.kind() == io::ErrorKind::Interrupted => {
+                continue;
+            }
+            Err(err) => return Err(err),
+        }
+        for event in events.iter() {
+            match event.token() {
+                SIGNAL => return Ok(()),
+                KEYBOARD => {
+                    keyboard.read_event();
+                    match keyboard.decode_event() {
+                        Event::KeyPress(key) => ctrl.execute(key),
+                        _ => zombie::collect_zombies(),
+                    }
+                }
+                _ => {}
+            }
         }
     }
-    Ok(())
 }
