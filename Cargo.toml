@@ -1,7 +1,8 @@
 [package]
 name = "rhkd"
-version = "1.0.0"
+version = "1.1.0"
 authors = ["Léo Duret <leoduret@outlook.com>"]
+
 
 [dependencies]
 x11 = {version = "^2.18", features=["xlib"]}
@@ -11,3 +12,5 @@ zombie = {version = "^0.0.4"}
 signal-hook = {version= "^0.3"}
 signal-hook-mio = {version= "^0.2", features=["support-v0_7"]}
 mio = {version="^0.7", features=["os-poll", "os-ext"]}
+log = {version="^0.4"}
+pretty_env_logger = {version="^0.4"}

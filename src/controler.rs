@@ -36,6 +36,7 @@ impl<'a, 'kb> Builder<'a, 'kb> {
         self.try_bind(pattern, cmd).expect("Unable to bind key");
     }
     pub fn try_bind(&mut self, pattern: &str, cmd: &str) -> Result<(), key::Error> {
+        info!("mapping: {} -> {}", pattern, cmd);
         let key = Key::from_str(pattern)?;
         let cmd = Cmd::from_str(cmd)?;
         let Locks { num, caps } = self.locks;
@@ -59,6 +60,7 @@ impl<'a, 'kb> Builder<'a, 'kb> {
     }
 
     pub fn finish<T: AsRef<std::path::Path>>(mut self, path: T) -> io::Result<Controler> {
+        info!("started building fst");
         self.commands.shrink_to_fit();
         self.binds.sort_unstable_by_key(|k| k.0);
 
@@ -83,6 +85,7 @@ impl<'a, 'kb> Builder<'a, 'kb> {
             .expect("issue with the inner bufwriter");
 
         let map = Map::new(unsafe { memmap::Mmap::map(&file)? }).map_err(fsterror_to_io)?;
+        info!("finished building fst");
         Ok(Controler { cmds, map })
     }
 }
@@ -99,7 +102,7 @@ impl Controler {
                 return;
             }
             if let Err(err) = self.cmds[index as usize].0.spawn() {
-                eprintln!("command failed to spawn {:?}", err);
+                error!("unable to spawn command: {:?}", err);
             }
         }
     }

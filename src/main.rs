@@ -4,6 +4,9 @@ extern crate signal_hook;
 extern crate signal_hook_mio;
 extern crate x11;
 
+#[macro_use]
+extern crate log;
+
 mod binds;
 mod controler;
 mod key;
@@ -37,25 +40,15 @@ fn argparse() -> Args {
     let mut args = env::args().skip(1);
     let mut output = Args::default();
 
-    match args.len() {
-        0 => {}
-        1 => {
-            if let Some("--help") = args.next().as_deref() {
-                println!("{}", HELP);
-                std::process::exit(0)
-            } else {
-                exit()
+    while let Some(arg) = args.next() {
+        match &*arg {
+            "--help" => {
+                eprintln!("{}", HELP);
+                std::process::exit(1)
             }
+            "--fst" => output.fst = args.next().ok_or_else(exit).ok(),
+            _ => exit(),
         }
-        a if a % 2 == 0 => {
-            for _ in (0..a).step_by(2) {
-                match args.next().as_deref() {
-                    Some("--fst") => output.fst = args.next(),
-                    Some(_) | None => exit(),
-                }
-            }
-        }
-        _ => exit(),
     }
     output
 }
@@ -64,10 +57,12 @@ const SIGNAL: Token = Token(0);
 const KEYBOARD: Token = Token(1);
 
 fn main() -> io::Result<()> {
+    pretty_env_logger::init_timed();
+
     let mut poll = Poll::new()?;
     let args = argparse();
 
-    let mut context = DisplayContext::current()?;
+    let mut context = DisplayContext::current().unwrap();
     let mut keyboard = Keyboard::new(&mut context);
 
     let mut builder = Builder::new(&mut keyboard);
@@ -85,7 +80,9 @@ fn main() -> io::Result<()> {
         )?;
     }
 
-    let mut events = Events::with_capacity(8);
+    let mut events = Events::with_capacity(32);
+    let mut xevents = Vec::with_capacity(32);
+    let mut collect = 0;
     loop {
         match poll.poll(&mut events, None) {
             Ok(_) => {}
@@ -96,12 +93,25 @@ fn main() -> io::Result<()> {
         }
         for event in events.iter() {
             match event.token() {
-                SIGNAL => return Ok(()),
+                SIGNAL => {
+                    trace!("signal event");
+                    return Ok(());
+                }
                 KEYBOARD => {
-                    keyboard.read_event();
-                    match keyboard.decode_event() {
-                        Event::KeyPress(key) => ctrl.execute(key),
-                        _ => zombie::collect_zombies(),
+                    trace!("keyboard event");
+                    collect += 1;
+
+                    keyboard.read_events(&mut xevents);
+                    xevents.drain(..).for_each(|event| {
+                        if let Event::KeyPress(key) = event {
+                            ctrl.execute(key);
+                        }
+                    });
+
+                    if collect >= 10 {
+                        info!("collecting zombies");
+                        collect = 0;
+                        zombie::collect_zombies();
                     }
                 }
                 _ => {}
