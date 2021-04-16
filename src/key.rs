@@ -1,8 +1,4 @@
-use std::{
-    ffi::CString,
-    process::{Command, Stdio},
-    str::FromStr,
-};
+use std::{alloc::Layout, ffi::CString, str::FromStr};
 
 use crate::binds::xmodmap;
 
@@ -10,11 +6,8 @@ use x11::xlib::{self, XStringToKeysym};
 
 pub type Error = ();
 
-#[repr(transparent)]
-pub struct Cmd(pub Command);
-
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-#[repr(C)]
+#[repr(C, packed)]
 pub struct Key {
     pub sym: u64,
     pub mask: u32,
@@ -40,8 +33,8 @@ impl Key {
     }
 }
 
-impl From<Key> for [u8; 16] {
-    fn from(key: Key) -> [u8; 16] {
+impl From<Key> for [u8; Layout::new::<Key>().size()] {
+    fn from(key: Key) -> [u8; Layout::new::<Key>().size()] {
         unsafe { std::mem::transmute(key) }
     }
 }
@@ -108,19 +101,6 @@ impl FromStr for Key {
             key = key.merge(parse_convert_modifier(k.trim()).map_err(|_| ())?);
         }
         Ok(key)
-    }
-}
-
-impl FromStr for Cmd {
-    type Err = Error;
-    fn from_str(cmd: &str) -> Result<Self, Self::Err> {
-        let mut args = cmd.split(' ');
-        let mut bld: Command = Command::new(args.next().ok_or(())?);
-        bld.args(args);
-        bld.stdin(Stdio::null());
-        bld.stderr(Stdio::null());
-        bld.stdout(Stdio::null());
-        Ok(Self(bld))
     }
 }
 

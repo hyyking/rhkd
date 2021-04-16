@@ -1,24 +1,28 @@
 use std::{
+    alloc::Layout,
+    convert::TryInto,
     fs::OpenOptions,
     io::{self, BufWriter},
+    path::Path,
     str::FromStr,
 };
 
 use crate::{
-    key::{self, Cmd, Key, Locks},
+    exec::{Exec, IntoExec},
+    key::{self, Key, Locks},
     keyboard::Keyboard,
 };
 
 use fst::{self, Map, MapBuilder};
 
 pub struct Controler {
-    cmds: Box<[Cmd]>,
+    cmds: Box<[Exec]>,
     map: Map<memmap::Mmap>,
 }
 
 pub struct Builder<'a, 'kb> {
-    commands: Vec<Cmd>,
-    binds: Vec<([u8; 16], u64)>,
+    commands: Vec<Exec>,
+    binds: Vec<([u8; Layout::new::<Key>().size()], u64)>,
     locks: Locks,
     keyboard: &'a mut Keyboard<'kb>,
 }
@@ -32,13 +36,13 @@ impl<'a, 'kb> Builder<'a, 'kb> {
             keyboard,
         }
     }
-    pub fn bind(&mut self, pattern: &str, cmd: &str) {
+    pub fn bind<T: IntoExec>(&mut self, pattern: &str, cmd: T) {
         self.try_bind(pattern, cmd).expect("Unable to bind key");
     }
-    pub fn try_bind(&mut self, pattern: &str, cmd: &str) -> Result<(), key::Error> {
-        info!("mapping: {} -> {}", pattern, cmd);
+    pub fn try_bind<T: IntoExec>(&mut self, pattern: &str, cmd: T) -> Result<(), key::Error> {
+        info!("mapping: {} -> {:?}", pattern, cmd);
         let key = Key::from_str(pattern)?;
-        let cmd = Cmd::from_str(cmd)?;
+        let cmd = cmd.into_exec()?;
         let Locks { num, caps } = self.locks;
 
         let numlocked = key.merge(Key::mask(num.unwrap_or(0)));
@@ -59,7 +63,7 @@ impl<'a, 'kb> Builder<'a, 'kb> {
         Ok(())
     }
 
-    pub fn finish<T: AsRef<std::path::Path>>(mut self, path: T) -> io::Result<Controler> {
+    pub fn finish<T: AsRef<Path>>(mut self, path: T) -> io::Result<Controler> {
         info!("started building fst");
         self.commands.shrink_to_fit();
         self.binds.sort_unstable_by_key(|k| k.0);
@@ -92,8 +96,10 @@ impl<'a, 'kb> Builder<'a, 'kb> {
 
 impl Controler {
     pub fn execute(&mut self, key: Key) {
-        use std::convert::TryInto;
-        if let Some(index) = self.map.get::<[u8; 16]>(key.into()) {
+        if let Some(index) = self
+            .map
+            .get::<[u8; Layout::new::<Key>().size()]>(key.into())
+        {
             if usize::max_value()
                 .try_into()
                 .map(|v| index > v)
@@ -101,9 +107,18 @@ impl Controler {
             {
                 return;
             }
-            if let Err(err) = self.cmds[index as usize].0.spawn() {
-                error!("unable to spawn command: {:?}", err);
+            let t = &mut self.cmds[index as usize];
+            match t.spawn() {
+                Ok(mut handle) => {
+                    info!("spawned command | pid: {:?}", handle.id());
+                    let _ = handle.try_wait(); // try to avoid zombies if possible
+                }
+                Err(err) => {
+                    error!("unable to spawn command: {:?}", err);
+                }
             }
+        } else {
+            warn!("unmatched combination {:?}", key);
         }
     }
 }

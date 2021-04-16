@@ -9,6 +9,7 @@ extern crate log;
 
 mod binds;
 mod controler;
+mod exec;
 mod key;
 mod keyboard;
 
