@@ -1,15 +1,13 @@
-use std::{
-    process::{Command, Stdio},
-    str::FromStr,
-};
+use std::{alloc::Layout, ffi::CString, str::FromStr};
+
+use crate::binds::xmodmap;
+
+use x11::xlib::{self, XStringToKeysym};
 
 pub type Error = ();
 
-#[repr(transparent)]
-pub struct Cmd(pub Command);
-
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
-#[repr(C)]
+#[repr(C, packed)]
 pub struct Key {
     pub sym: u64,
     pub mask: u32,
@@ -26,7 +24,7 @@ impl Key {
         Self::mask(0)
     }
 
-    pub fn merge(mut self, other: Self) -> Self {
+    pub const fn merge(mut self, other: Self) -> Self {
         if self.sym == u64::MAX {
             self.sym = other.sym
         }
@@ -34,9 +32,10 @@ impl Key {
         self
     }
 }
-impl Into<[u8; 16]> for Key {
-    fn into(self) -> [u8; 16] {
-        unsafe { std::mem::transmute(self) }
+
+impl From<Key> for [u8; Layout::new::<Key>().size()] {
+    fn from(key: Key) -> [u8; Layout::new::<Key>().size()] {
+        unsafe { std::mem::transmute(key) }
     }
 }
 
@@ -48,9 +47,6 @@ pub(crate) struct Locks {
 
 impl Locks {
     pub fn new() -> Self {
-        use crate::binds::xmodmap;
-        use x11::xlib;
-
         let num = match "Num_Lock" {
             xmodmap::MOD1 => Some(xlib::Mod1Mask),
             xmodmap::MOD2 => Some(xlib::Mod2Mask),
@@ -73,8 +69,6 @@ impl Locks {
 
 #[allow(unreachable_code)]
 fn parse_convert_modifier(k: &str) -> Result<Key, String> {
-    use super::binds::xmodmap;
-    use x11::xlib;
     match k {
         "any" => Ok(Key::mask(xlib::AnyModifier)),
         "shift" => Ok(Key::mask(xlib::ShiftMask)),
@@ -90,8 +84,8 @@ fn parse_convert_modifier(k: &str) -> Result<Key, String> {
 }
 
 fn into_keysym(key: &str) -> Result<u64, String> {
-    let cs = std::ffi::CString::new(key).expect("couldn't create new cstring");
-    match unsafe { x11::xlib::XStringToKeysym(cs.as_ptr()) } {
+    let cs = CString::new(key).expect("couldn't create new cstring");
+    match unsafe { XStringToKeysym(cs.as_ptr()) } {
         0 => Err(format!("Unmatched key: {}", key)),
         a => Ok(a),
     }
@@ -110,23 +104,9 @@ impl FromStr for Key {
     }
 }
 
-impl FromStr for Cmd {
-    type Err = Error;
-    fn from_str(cmd: &str) -> Result<Self, Self::Err> {
-        let mut args = cmd.split(' ');
-        let mut bld: Command = Command::new(args.next().ok_or(())?);
-        bld.args(args);
-        bld.stdin(Stdio::null());
-        bld.stderr(Stdio::null());
-        bld.stdout(Stdio::null());
-        Ok(Self(bld))
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
-    use x11::xlib;
 
     #[test]
     fn parse() {

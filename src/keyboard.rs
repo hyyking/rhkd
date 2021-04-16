@@ -3,13 +3,20 @@ use std::{io, mem::MaybeUninit, os::unix::io::RawFd, ptr::NonNull};
 use super::key::Key;
 
 use mio::{event::Source, unix::SourceFd};
-use x11::xlib::{Display, Window, XEvent};
+
+use x11::xlib::{
+    AnyKey, AnyModifier, BadAccess as BAD_ACCESS, BadValue as BAD_VALUE, BadWindow as BAD_WINDOW,
+    Display, KeyPress as KEY_PRESS, KeyRelease as KEY_RELEASE, Window, XCloseDisplay,
+    XConnectionNumber, XDefaultScreenOfDisplay, XEvent, XGrabKey, XKeyPressedEvent,
+    XKeyReleasedEvent, XKeycodeToKeysym, XKeysymToKeycode, XNextEvent, XOpenDisplay, XPending,
+    XRootWindowOfScreen, XUngrabKey,
+};
 
 #[derive(Debug)]
 
 pub struct DisplayContext {
-    root: Window,
     display: NonNull<Display>,
+    root: Window,
     fd: RawFd,
 }
 
@@ -25,19 +32,21 @@ pub enum Event {
 }
 
 impl DisplayContext {
+    /// # Errors
+    /// Will throw an error if the file can't be open
     pub fn current() -> io::Result<Self> {
-        use x11::xlib::{
-            XConnectionNumber, XDefaultScreenOfDisplay, XOpenDisplay, XRootWindowOfScreen,
-        };
         unsafe {
             let display = NonNull::new(XOpenDisplay(std::ptr::null())).ok_or({
+                error!("unable to access X11 server");
                 io::Error::new(
                     io::ErrorKind::AddrNotAvailable,
-                    "unable to access x11 server",
+                    "unable to access X11 server",
                 )
             })?;
             let root = XRootWindowOfScreen(XDefaultScreenOfDisplay(display.as_ptr()));
             let fd = XConnectionNumber(display.as_ptr());
+
+            trace!("connected to X11 server");
             Ok(Self { display, root, fd })
         }
     }
@@ -48,18 +57,14 @@ impl DisplayContext {
 }
 
 impl<'a> Keyboard<'a> {
-    /// # Errors
-    /// Will throw an error if the file can't be open
     pub fn new(display: &'a mut DisplayContext) -> Self {
         let event = MaybeUninit::zeroed();
         Self { display, event }
     }
 
     pub fn grab_key(&mut self, key: Key) -> io::Result<()> {
-        use x11::xlib::{BadAccess, BadValue, BadWindow, XGrabKey, XKeysymToKeycode};
-        const BAD_ACCESS: i32 = BadAccess as i32;
-        const BAD_VALUE: i32 = BadValue as i32;
-        const BAD_WINDOW: i32 = BadWindow as i32;
+        trace!("grabing {:?}", key);
+
         let err = unsafe {
             let code = XKeysymToKeycode(self.display.display_mut(), key.sym);
             XGrabKey(
@@ -72,7 +77,7 @@ impl<'a> Keyboard<'a> {
                 x11::xlib::GrabModeAsync,
             )
         };
-        match err {
+        let res = match err as u8 {
             BAD_ACCESS => Err(io::Error::new(
                 io::ErrorKind::Other,
                 format!("X11 BadAccess: {:?}", key),
@@ -86,18 +91,30 @@ impl<'a> Keyboard<'a> {
                 format!("X11 BadWindow: {:?}", key),
             )),
             _ => Ok(()),
+        };
+        if let Err(ref e) = res {
+            error!("unable to grab {:?}, {}", key, e);
+        }
+        res
+    }
+
+    pub fn read_events(&mut self, buf: &mut Vec<Event>) {
+        let in_flight = unsafe { XPending(self.display.display_mut()) };
+        for _ in 0..in_flight {
+            self.read_event();
+            // SAFETY: We just read an event
+            buf.push(unsafe { self.decode_event() });
         }
     }
 
     pub fn read_event(&mut self) {
-        unsafe { x11::xlib::XNextEvent(self.display.display_mut(), self.event.as_mut_ptr()) };
+        trace!("reading X11 event");
+        unsafe { XNextEvent(self.display.display_mut(), self.event.as_mut_ptr()) };
     }
 
-    pub fn decode_event(&mut self) -> Event {
-        use x11::xlib::{
-            KeyPress as KEY_PRESS, KeyRelease as KEY_RELEASE, XKeyPressedEvent, XKeyReleasedEvent,
-        };
-        let event = unsafe { &*self.event.as_mut_ptr() };
+    pub unsafe fn decode_event(&mut self) -> Event {
+        trace!("decoding X11 event");
+        let event = &*self.event.as_ptr();
         match event.get_type() {
             KEY_PRESS => {
                 let (sym, mask) = {
@@ -121,7 +138,7 @@ impl<'a> Keyboard<'a> {
 
     #[allow(clippy::cast_possible_truncation)]
     fn keycode_to_keysym(&mut self, code: u32) -> u64 {
-        unsafe { x11::xlib::XKeycodeToKeysym(self.display.display_mut(), code as u8, 0) }
+        unsafe { XKeycodeToKeysym(self.display.display_mut(), code as u8, 0) }
     }
 }
 
@@ -151,14 +168,12 @@ impl<'a> Source for Keyboard<'a> {
 
 impl Drop for DisplayContext {
     fn drop(&mut self) {
-        use x11::xlib::XCloseDisplay;
         unsafe { XCloseDisplay(self.display.as_ptr()) };
     }
 }
 
 impl<'a> Drop for Keyboard<'a> {
     fn drop(&mut self) {
-        use x11::xlib::{AnyKey, AnyModifier, XUngrabKey};
         unsafe {
             XUngrabKey(
                 self.display.display_mut(),
